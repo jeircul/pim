@@ -39,7 +39,7 @@ task test:coverage
 # Deactivate a role
 ./pim -d
 
-# Check status of active roles
+# Show active role assignments
 ./pim -s
 
 # Show help

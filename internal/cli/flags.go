@@ -48,6 +48,8 @@ func ParseFlags() (Config, bool, error) {
 		fmt.Fprintf(os.Stderr, "        Duration in hours, 1-8 (default: 1)\n")
 		fmt.Fprintf(os.Stderr, "  -d, --deactivate\n")
 		fmt.Fprintf(os.Stderr, "        Deactivate an active role assignment\n")
+		fmt.Fprintf(os.Stderr, "  -s, --status\n")
+		fmt.Fprintf(os.Stderr, "        Show active role assignments\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help\n")
 		fmt.Fprintf(os.Stderr, "        Show this help message\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
