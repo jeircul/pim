@@ -72,11 +72,6 @@ tasks:
       - go tool cover -html=coverage.out -o coverage.html
       - echo "Coverage report generated at coverage.html"
 
-  lint:
-    desc: Run linter (requires golangci-lint)
-    cmds:
-      - golangci-lint run ./...
-
   fmt:
     desc: Format code
     cmds:
