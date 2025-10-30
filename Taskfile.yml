@@ -1,0 +1,100 @@
+version: "3"
+
+vars:
+  BINARY_NAME: pim
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  build:
+    desc: Build binary for current platform
+    cmds:
+      - go build -ldflags "-s -w -X main.Version={{.VERSION}}" -o {{.BINARY_NAME}} .
+
+  build:linux:
+    desc: Build for Linux (AMD64)
+    cmds:
+      - mkdir -p dist
+      - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X main.Version={{.VERSION}}" -trimpath -o dist/{{.BINARY_NAME}}-linux-amd64 .
+
+  build:linux-arm:
+    desc: Build for Linux (ARM64)
+    cmds:
+      - mkdir -p dist
+      - GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w -X main.Version={{.VERSION}}" -trimpath -o dist/{{.BINARY_NAME}}-linux-arm64 .
+
+  build:macos:
+    desc: Build for macOS (Apple Silicon ARM64)
+    cmds:
+      - mkdir -p dist
+      - GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w -X main.Version={{.VERSION}}" -trimpath -o dist/{{.BINARY_NAME}}-darwin-arm64 .
+
+  build:macos-intel:
+    desc: Build for macOS (Intel AMD64)
+    cmds:
+      - mkdir -p dist
+      - GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X main.Version={{.VERSION}}" -trimpath -o dist/{{.BINARY_NAME}}-darwin-amd64 .
+
+  build:windows:
+    desc: Build for Windows (AMD64)
+    cmds:
+      - mkdir -p dist
+      - GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X main.Version={{.VERSION}}" -trimpath -o dist/{{.BINARY_NAME}}-windows-amd64.exe .
+
+  build:all:
+    desc: Build for all platforms (Linux, macOS, Windows)
+    deps:
+      - build:linux
+      - build:linux-arm
+      - build:macos
+      - build:macos-intel
+      - build:windows
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test -v -race -cover ./...
+
+  test:unit:
+    desc: Run unit tests only
+    cmds:
+      - go test -v -cover ./pkg/... ./internal/...
+
+  test:coverage:
+    desc: Run tests with coverage report
+    cmds:
+      - go test -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+      - echo "Coverage report generated at coverage.html"
+
+  lint:
+    desc: Run linter (requires golangci-lint)
+    cmds:
+      - golangci-lint run ./...
+
+  fmt:
+    desc: Format code
+    cmds:
+      - go fmt ./...
+
+  tidy:
+    desc: Tidy go.mod and go.sum
+    cmds:
+      - go mod tidy
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -f {{.BINARY_NAME}}
+      - rm -rf dist/
+      - rm -f coverage.out coverage.html
+
+  install:
+    desc: Install binary to GOPATH/bin
+    cmds:
+      - go install -ldflags "-s -w -X main.Version={{.VERSION}}" .
