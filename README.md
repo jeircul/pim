@@ -2,34 +2,6 @@
 
 Modular, production-ready CLI tool for activating and deactivating Azure Privileged Identity Management (PIM) roles.
 
-## Project Structure
-
-```shell
-pim/
-├── main.go                    # CLI entry point
-├── pkg/azpim/                 # Reusable PIM client library (public API)
-│   ├── client.go              # PIM client implementation
-│   ├── types.go               # Data structures
-│   ├── errors.go              # Custom errors
-│   └── client_test.go         # Unit tests
-├── internal/cli/              # CLI-specific code (private)
-│   ├── flags.go               # Flag parsing and validation
-│   ├── prompt.go              # Interactive user prompts
-│   ├── handlers.go            # Activation/deactivation handlers
-│   └── flags_test.go          # CLI tests
-├── go.mod                     # Go module definition
-├── Taskfile.yml               # Task automation
-└── README.md                  # This file
-```
-
-## Features
-
-- **Modular Design** - Reusable `pkg/azpim` library for other Go projects
-- **Testable** - Unit tests for all components
-- **Production-Ready** - Error handling, validation, proper structure
-- **Same Functionality** - Identical to original `pim` tool
-- **Task Automation** - Modern Taskfile for builds and tests
-
 ## Build
 
 ```shell
@@ -66,6 +38,9 @@ task test:coverage
 
 # Deactivate a role
 ./pim -d
+
+# Check status of active roles
+./pim -s
 
 # Show help
 ./pim -h

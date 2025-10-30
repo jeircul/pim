@@ -50,7 +50,11 @@ func run() error {
 	}
 	fmt.Printf("Authenticated as: %s (%s)\n", user.DisplayName, user.UserPrincipalName)
 
-	// Handle deactivation or activation flow
+	// Handle status, deactivation, or activation flow
+	if cfg.Status {
+		return cli.HandleStatus(ctx, client, user.ID)
+	}
+
 	if cfg.Deactivate {
 		return cli.HandleDeactivation(ctx, client, user.ID)
 	}

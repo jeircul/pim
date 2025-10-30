@@ -22,6 +22,15 @@ type ActiveAssignment struct {
 	ScopeDisplay     string
 	RoleName         string
 	RoleDefinitionID string
+	EndDateTime      string
+}
+
+// ExpiryDisplay returns a human-readable expiry string
+func (a ActiveAssignment) ExpiryDisplay() string {
+	if a.EndDateTime == "" {
+		return "unknown"
+	}
+	return "expires " + a.EndDateTime
 }
 
 // ScheduleRequest represents a PIM schedule request body

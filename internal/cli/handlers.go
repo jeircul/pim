@@ -38,6 +38,25 @@ func HandleDeactivation(ctx context.Context, client *azpim.Client, principalID s
 	return nil
 }
 
+// HandleStatus shows active assignments with expiry times
+func HandleStatus(ctx context.Context, client *azpim.Client, principalID string) error {
+	assignments, err := client.GetActiveAssignments(principalID)
+	if err != nil {
+		return fmt.Errorf("get active assignments: %w", err)
+	}
+
+	if len(assignments) == 0 {
+		fmt.Println("No active assignments found.")
+		return nil
+	}
+
+	fmt.Printf("\nActive assignments (%d total):\n", len(assignments))
+	for i, a := range assignments {
+		fmt.Printf("  %2d) %s @ %s (%s)\n", i+1, a.RoleName, a.ScopeDisplay, a.ExpiryDisplay())
+	}
+	return nil
+}
+
 // HandleActivation processes the activation flow
 func HandleActivation(ctx context.Context, client *azpim.Client, principalID, justification string, hours int) error {
 	roles, err := client.GetEligibleRoles()
