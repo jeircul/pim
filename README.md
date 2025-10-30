@@ -100,13 +100,6 @@ task tidy
 task clean
 ```
 
-## Differences from Original
-
-1. **Modular Structure** - Separated into packages
-2. **Testable** - Unit tests included
-3. **Reusable** - `pkg/azpim` can be imported
-4. **Better Organization** - Clear separation of concerns
-
 ## Next Steps
 
 After testing and verification:
