@@ -11,6 +11,9 @@ import (
 	"github.com/jeircul/pim/pkg/azpim"
 )
 
+// Version is set at build time.
+var Version = "dev"
+
 func main() {
 	if err := run(); err != nil {
 		if errors.Is(err, azpim.ErrUserCancelled) {
@@ -30,6 +33,11 @@ func run() error {
 	}
 
 	if showHelp {
+		return nil
+	}
+
+	if cfg.ShowVersion {
+		fmt.Printf("pim %s\n", Version)
 		return nil
 	}
 

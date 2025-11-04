@@ -1,85 +1,66 @@
 # PIM - Azure PIM CLI
 
-Modular, production-ready CLI tool for activating and deactivating Azure Privileged Identity Management (PIM) roles.
+Opinionated command-line tool for activating, deactivating, and checking Azure Privileged Identity Management (PIM) role assignments.
 
-## Build
+## Features
 
-```shell
-# Build for current platform
-task build
+- Activate eligible Azure role assignments with justifications and custom duration.
+- Deactivate active assignments in seconds.
+- Inspect current elevations with `--status`.
+- Works on macOS, Linux, and Windows (amd64 / arm64).
+- Authenticates using your existing Azure login (device code flow).
 
-# Build for specific platform
-task build:linux
-task build:macos
-task build:windows
+## Quick Install
 
-# Build for all platforms
-task build:all
-```
-
-## Test
+### macOS / Linux
 
 ```shell
-# Run all tests
-task test
-
-# Run unit tests only
-task test:unit
-
-# Generate coverage report
-task test:coverage
+curl -sSfL https://raw.githubusercontent.com/jeircul/pim/main/scripts/install.sh | bash
 ```
+
+Install a specific release (defaults to the latest):
+
+```shell
+curl -sSfL https://raw.githubusercontent.com/jeircul/pim/main/scripts/install.sh | bash -s -- v1.2.3
+```
+
+### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/jeircul/pim/main/scripts/install.ps1 | iex
+```
+
+Install a specific release:
+
+```powershell
+irm https://raw.githubusercontent.com/jeircul/pim/main/scripts/install.ps1 -OutFile install.ps1
+./install.ps1 -Version v1.2.3
+```
+
+Make sure the install directory (`~/.local/bin` on Unix, `%LOCALAPPDATA%\Programs\pim` on Windows) is on your `PATH`.
 
 ## Usage
 
 ```shell
-# Activate a role
-./pim -j "Deploy infrastructure" -t 4
+# Show current version
+pim --version
 
-# Deactivate a role
-./pim -d
+# Elevate a role for 4 hours with justification
+pim -j "Deploy infrastructure" -t 4
 
-# Show active role assignments
-./pim -s
+# End the active assignment early
+pim -d
 
-# Show help
-./pim -h
+# Check active elevations
+pim -s
+
+# Discover available options
+pim -h
 ```
 
-## Reusing the Library
+## Download Options
 
-The `pkg/azpim` package can be imported in other Go projects:
+- **Install scripts:** see the commands above for macOS/Linux (`install.sh`) and Windows (`install.ps1`).
+- **Manual download:** grab the latest release archives from [github.com/jeircul/pim/releases](https://github.com/jeircul/pim/releases).
 
-```go
-import "github.com/jeircul/pim/pkg/azpim"
-
-func main() {
-    ctx := context.Background()
-    client, _ := azpim.NewClient(ctx)
-
-    roles, _ := client.GetEligibleRoles()
-    // Use in your automation...
-}
-```
-
-## Development
-
-```shell
-# Format code
-task fmt
-
-# Tidy dependencies
-task tidy
-
-# Clean build artifacts
-task clean
-```
-
-## Next Steps
-
-After testing and verification:
-
-1. Run tests: `task test`
-2. Build for your platform: `task build`
-3. Test functionality: `./pim -h`
-4. Ready to use - module paths already set to `github.com/jeircul/pim`
+Report issues or request features in the GitHub repository. Happy elevating!

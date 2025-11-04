@@ -14,6 +14,7 @@ type Config struct {
 	Hours         int
 	Deactivate    bool
 	Status        bool
+	ShowVersion   bool
 }
 
 // ParseFlags parses command-line flags and returns configuration
@@ -34,6 +35,9 @@ func ParseFlags() (Config, bool, error) {
 	flag.BoolVar(&cfg.Status, "s", false, "")
 	flag.BoolVar(&cfg.Status, "status", false, "")
 
+	flag.BoolVar(&cfg.ShowVersion, "version", false, "")
+	flag.BoolVar(&cfg.ShowVersion, "V", false, "")
+
 	flag.BoolVar(&showHelp, "h", false, "")
 	flag.BoolVar(&showHelp, "help", false, "")
 
@@ -50,6 +54,8 @@ func ParseFlags() (Config, bool, error) {
 		fmt.Fprintf(os.Stderr, "        Deactivate an active role assignment\n")
 		fmt.Fprintf(os.Stderr, "  -s, --status\n")
 		fmt.Fprintf(os.Stderr, "        Show active role assignments\n")
+		fmt.Fprintf(os.Stderr, "      --version, -V\n")
+		fmt.Fprintf(os.Stderr, "        Show build version\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help\n")
 		fmt.Fprintf(os.Stderr, "        Show this help message\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
@@ -77,7 +83,7 @@ func ParseFlags() (Config, bool, error) {
 
 // ValidateConfig validates the configuration
 func ValidateConfig(cfg Config) error {
-	if cfg.Status || cfg.Deactivate {
+	if cfg.ShowVersion || cfg.Status || cfg.Deactivate {
 		return nil
 	}
 	if cfg.Justification == "" {

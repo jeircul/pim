@@ -140,8 +140,11 @@ tasks:
       - task: build
 
   release:
-    desc: Prepare release (ci + build:all)
+    desc: Build release artifacts locally (snapshot)
     cmds:
-      - task: ci
-      - task: build:all
-      - echo "✓ Release artifacts ready in dist/"
+      - goreleaser release --snapshot --clean
+
+  release:publish:
+    desc: Publish a release to GitHub (requires GITHUB_TOKEN)
+    cmds:
+      - goreleaser release --clean
