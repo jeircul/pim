@@ -23,12 +23,10 @@ builds:
       - 7
 archives:
   - id: archive
-    builds:
-      - pim
     name_template: '{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}'
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
     files:
       - README.md
 checksum:
