@@ -58,6 +58,8 @@ pim -s
 pim -h
 ```
 
+The first time you invoke a command that talks to Azure you will see a device code prompt. Open the provided URL, enter the code, and sign in with the account that has PIM access. Subsequent commands reuse the same sign-in until the token expires.
+
 ## Download Options
 
 - **Install scripts:** see the commands above for macOS/Linux (`install.sh`) and Windows (`install.ps1`).

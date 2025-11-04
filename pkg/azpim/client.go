@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -40,9 +41,16 @@ type Client struct {
 	ctx        context.Context
 }
 
-// NewClient creates a new PIM client with default Azure credential
+// NewClient creates a new PIM client using device code authentication.
 func NewClient(ctx context.Context) (*Client, error) {
-	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	tenantID := os.Getenv("AZURE_TENANT_ID")
+	cred, err := azidentity.NewDeviceCodeCredential(&azidentity.DeviceCodeCredentialOptions{
+		TenantID: tenantID,
+		UserPrompt: func(ctx context.Context, msg azidentity.DeviceCodeMessage) error {
+			fmt.Fprintln(os.Stderr, msg.Message)
+			return nil
+		},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("create credential: %w", err)
 	}
