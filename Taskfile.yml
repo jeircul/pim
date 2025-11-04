@@ -4,50 +4,59 @@ vars:
   BINARY_NAME: pim
   VERSION:
     sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
+  LDFLAGS: "-s -w -X main.Version={{.VERSION}}"
+  INSTALL_DIR: ~/.local/bin
 
 tasks:
   default:
+    desc: Show available tasks
     cmds:
       - task --list
     silent: true
 
+  # Development tasks
+  dev:
+    desc: Run in development mode (build and execute)
+    deps: [build]
+    cmds:
+      - ./{{.BINARY_NAME}} {{.CLI_ARGS}}
+
+  fmt:
+    desc: Format all Go code
+    cmds:
+      - go fmt ./...
+
+  tidy:
+    desc: Tidy dependencies (go.mod/go.sum)
+    cmds:
+      - go mod tidy
+
+  # Testing tasks
+  test:
+    desc: Run all tests with race detection
+    cmds:
+      - go test -v -race -cover ./...
+
+  test:unit:
+    desc: Run unit tests only (pkg + internal)
+    cmds:
+      - go test -v -cover ./pkg/... ./internal/...
+
+  test:coverage:
+    desc: Generate HTML coverage report
+    cmds:
+      - go test -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+      - echo "Coverage report generated at coverage.html"
+
+  # Build tasks
   build:
-    desc: Build binary for current platform
+    desc: Build for current platform
     cmds:
-      - go build -ldflags "-s -w -X main.Version={{.VERSION}}" -o {{.BINARY_NAME}} .
-
-  build:linux:
-    desc: Build for Linux (AMD64)
-    cmds:
-      - mkdir -p dist
-      - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X main.Version={{.VERSION}}" -trimpath -o dist/{{.BINARY_NAME}}-linux-amd64 .
-
-  build:linux-arm:
-    desc: Build for Linux (ARM64)
-    cmds:
-      - mkdir -p dist
-      - GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w -X main.Version={{.VERSION}}" -trimpath -o dist/{{.BINARY_NAME}}-linux-arm64 .
-
-  build:macos:
-    desc: Build for macOS (Apple Silicon ARM64)
-    cmds:
-      - mkdir -p dist
-      - GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w -X main.Version={{.VERSION}}" -trimpath -o dist/{{.BINARY_NAME}}-darwin-arm64 .
-
-  build:macos-intel:
-    desc: Build for macOS (Intel AMD64)
-    cmds:
-      - mkdir -p dist
-      - GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X main.Version={{.VERSION}}" -trimpath -o dist/{{.BINARY_NAME}}-darwin-amd64 .
-
-  build:windows:
-    desc: Build for Windows (AMD64)
-    cmds:
-      - mkdir -p dist
-      - GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X main.Version={{.VERSION}}" -trimpath -o dist/{{.BINARY_NAME}}-windows-amd64.exe .
+      - go build -ldflags "{{.LDFLAGS}}" -o {{.BINARY_NAME}} .
 
   build:all:
-    desc: Build for all platforms (Linux, macOS, Windows)
+    desc: Build for all platforms
     deps:
       - build:linux
       - build:linux-arm
@@ -55,46 +64,87 @@ tasks:
       - build:macos-intel
       - build:windows
 
-  test:
-    desc: Run all tests
+  build:linux:
+    desc: Build for Linux AMD64
     cmds:
-      - go test -v -race -cover ./...
+      - mkdir -p dist
+      - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "{{.LDFLAGS}}" -trimpath -o dist/{{.BINARY_NAME}}-linux-amd64 .
 
-  test:unit:
-    desc: Run unit tests only
+  build:linux-arm:
+    desc: Build for Linux ARM64
     cmds:
-      - go test -v -cover ./pkg/... ./internal/...
+      - mkdir -p dist
+      - GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "{{.LDFLAGS}}" -trimpath -o dist/{{.BINARY_NAME}}-linux-arm64 .
 
-  test:coverage:
-    desc: Run tests with coverage report
+  build:macos:
+    desc: Build for macOS ARM64 (Apple Silicon)
     cmds:
-      - go test -coverprofile=coverage.out ./...
-      - go tool cover -html=coverage.out -o coverage.html
-      - echo "Coverage report generated at coverage.html"
+      - mkdir -p dist
+      - GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "{{.LDFLAGS}}" -trimpath -o dist/{{.BINARY_NAME}}-darwin-arm64 .
 
-  lint:
-    desc: Run linter (requires golangci-lint)
+  build:macos-intel:
+    desc: Build for macOS AMD64 (Intel)
     cmds:
-      - golangci-lint run ./...
+      - mkdir -p dist
+      - GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "{{.LDFLAGS}}" -trimpath -o dist/{{.BINARY_NAME}}-darwin-amd64 .
 
-  fmt:
-    desc: Format code
+  build:windows:
+    desc: Build for Windows AMD64
     cmds:
-      - go fmt ./...
+      - mkdir -p dist
+      - GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "{{.LDFLAGS}}" -trimpath -o dist/{{.BINARY_NAME}}-windows-amd64.exe .
 
-  tidy:
-    desc: Tidy go.mod and go.sum
+  # Installation tasks
+  install:
+    desc: Install to ~/.local/bin (user-local)
     cmds:
-      - go mod tidy
+      - mkdir -p {{.INSTALL_DIR}}
+      - go build -ldflags "{{.LDFLAGS}}" -o {{.INSTALL_DIR}}/{{.BINARY_NAME}} .
+      - echo "✓ Installed {{.BINARY_NAME}} to {{.INSTALL_DIR}}"
+
+  install:global:
+    desc: Install to GOPATH/bin (global)
+    cmds:
+      - go install -ldflags "{{.LDFLAGS}}" .
+      - echo "✓ Installed {{.BINARY_NAME}} to GOPATH/bin"
+
+  uninstall:
+    desc: Remove from ~/.local/bin
+    cmds:
+      - rm -f {{.INSTALL_DIR}}/{{.BINARY_NAME}}
+      - echo "✓ Removed {{.BINARY_NAME}} from {{.INSTALL_DIR}}"
+
+  # Maintenance tasks
+  maintain:
+    desc: Run all maintenance tasks (fmt, tidy, test)
+    cmds:
+      - task: fmt
+      - task: tidy
+      - task: test
 
   clean:
-    desc: Clean build artifacts
+    desc: Clean all build artifacts and coverage files
     cmds:
       - rm -f {{.BINARY_NAME}}
       - rm -rf dist/
       - rm -f coverage.out coverage.html
+      - echo "✓ Cleaned build artifacts"
 
-  install:
-    desc: Install binary to GOPATH/bin
+  # CI/Release tasks
+  ci:
+    desc: Run CI checks (fmt, tidy, test, build)
     cmds:
-      - go install -ldflags "-s -w -X main.Version={{.VERSION}}" .
+      - task: fmt
+      - task: tidy
+      - task: test
+      - task: build
+
+  release:
+    desc: Build release artifacts locally (snapshot)
+    cmds:
+      - goreleaser release --snapshot --clean
+
+  release:publish:
+    desc: Publish a release to GitHub (requires GITHUB_TOKEN)
+    cmds:
+      - goreleaser release --clean

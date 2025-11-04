@@ -225,7 +225,10 @@ func (c *Client) GetActiveAssignments(principalID string) ([]ActiveAssignment, e
 				PrincipalID      string `json:"principalId"`
 				Scope            string `json:"scope"`
 				RoleDefinitionID string `json:"roleDefinitionId"`
-				ExpandedProps    struct {
+				ScheduleInfo     struct {
+					EndDateTime string `json:"endDateTime"`
+				} `json:"scheduleInfo"`
+				ExpandedProps struct {
 					Scope struct {
 						DisplayName string `json:"displayName"`
 					} `json:"scope"`
@@ -250,6 +253,7 @@ func (c *Client) GetActiveAssignments(principalID string) ([]ActiveAssignment, e
 				ScopeDisplay:     item.Properties.ExpandedProps.Scope.DisplayName,
 				RoleName:         item.Properties.ExpandedProps.RoleDefinition.DisplayName,
 				RoleDefinitionID: item.Properties.RoleDefinitionID,
+				EndDateTime:      item.Properties.ScheduleInfo.EndDateTime,
 			})
 		}
 	}

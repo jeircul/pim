@@ -11,6 +11,9 @@ import (
 	"github.com/jeircul/pim/pkg/azpim"
 )
 
+// Version is set at build time.
+var Version = "dev"
+
 func main() {
 	if err := run(); err != nil {
 		if errors.Is(err, azpim.ErrUserCancelled) {
@@ -33,6 +36,11 @@ func run() error {
 		return nil
 	}
 
+	if cfg.ShowVersion {
+		fmt.Printf("pim %s\n", Version)
+		return nil
+	}
+
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -50,7 +58,11 @@ func run() error {
 	}
 	fmt.Printf("Authenticated as: %s (%s)\n", user.DisplayName, user.UserPrincipalName)
 
-	// Handle deactivation or activation flow
+	// Handle status, deactivation, or activation flow
+	if cfg.Status {
+		return cli.HandleStatus(ctx, client, user.ID)
+	}
+
 	if cfg.Deactivate {
 		return cli.HandleDeactivation(ctx, client, user.ID)
 	}
