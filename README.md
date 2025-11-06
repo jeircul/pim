@@ -1,18 +1,18 @@
-# PIM - Azure PIM CLI
+# ⚡️ PIM - Azure PIM CLI
 
 Opinionated command-line tool for activating, deactivating, and checking Azure Privileged Identity Management (PIM) role assignments.
 
-## Features
+## ✨ Features
 
-- Activate eligible Azure role assignments with justifications and custom duration.
-- Deactivate active assignments in seconds.
-- Inspect current elevations with `--status`.
-- Works on macOS, Linux, and Windows (amd64 / arm64).
-- Authenticates using your existing Azure login (device code flow).
+- 🔐 Activate eligible Azure role assignments with justifications and custom duration.
+- 🔄 Deactivate active assignments in seconds.
+- 👀 Inspect current elevations with `--status`.
+- 💻 Works on macOS, Linux, and Windows (amd64 / arm64).
+- 🔑 Authenticates using your existing Azure CLI or Azure PowerShell login.
 
-## Quick Install
+## 🚀 Quick Install
 
-### macOS / Linux
+### 🍏 macOS / Linux
 
 ```shell
 curl -sSfL https://raw.githubusercontent.com/jeircul/pim/main/scripts/install.sh | bash
@@ -24,7 +24,7 @@ Install a specific release (defaults to the latest):
 curl -sSfL https://raw.githubusercontent.com/jeircul/pim/main/scripts/install.sh | bash -s -- v1.2.3
 ```
 
-### Windows (PowerShell)
+### 🪟 Windows (PowerShell)
 
 ```powershell
 irm https://raw.githubusercontent.com/jeircul/pim/main/scripts/install.ps1 | iex
@@ -39,7 +39,7 @@ irm https://raw.githubusercontent.com/jeircul/pim/main/scripts/install.ps1 -OutF
 
 Make sure the install directory (`~/.local/bin` on Unix, `%LOCALAPPDATA%\Programs\pim` on Windows) is on your `PATH`.
 
-## Usage
+## 🧰 Usage
 
 ```shell
 # Show current version
@@ -58,11 +58,11 @@ pim -s
 pim -h
 ```
 
-The first time you invoke a command that talks to Azure you will see a device code prompt. Open the provided URL, enter the code, and sign in with the account that has PIM access. Subsequent commands reuse the same sign-in until the token expires.
+Sign in ahead of time with `az login` (bash/zsh) or `Connect-AzAccount` (PowerShell). The CLI automatically reuses whichever session is available. Set `PIM_ALLOW_DEVICE_LOGIN=true` if you want the tool to fall back to interactive device code prompts.
 
-## Download Options
+## 📦 Download Options
 
 - **Install scripts:** see the commands above for macOS/Linux (`install.sh`) and Windows (`install.ps1`).
 - **Manual download:** grab the latest release archives from [github.com/jeircul/pim/releases](https://github.com/jeircul/pim/releases).
 
-Report issues or request features in the GitHub repository. Happy elevating!
+Report issues or request features in the GitHub repository. Happy elevating! 🚀

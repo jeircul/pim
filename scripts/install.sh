@@ -52,3 +52,4 @@ install -m 755 "${workdir}/${BINARY}" "${INSTALL_DIR}/${BINARY}"
 
 echo "Installed ${BINARY} to ${INSTALL_DIR}"
 echo "Make sure ${INSTALL_DIR} is on your PATH."
+echo "Sign in with 'az login' or 'Connect-AzAccount' before using pim. Set PIM_ALLOW_DEVICE_LOGIN=true if you need interactive fallback."

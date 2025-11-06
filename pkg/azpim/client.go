@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -16,6 +17,15 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/google/uuid"
 )
+
+// Client handles Azure PIM operations
+type Client struct {
+	cred       azcore.TokenCredential
+	httpClient *http.Client
+	armToken   string
+	graphToken string
+	ctx        context.Context
+}
 
 const (
 	// APIVersion is the Azure PIM API version
@@ -32,27 +42,38 @@ const (
 	MaxHours = 8
 )
 
-// Client handles Azure PIM operations
-type Client struct {
-	cred       azcore.TokenCredential
-	httpClient *http.Client
-	armToken   string
-	graphToken string
-	ctx        context.Context
-}
-
-// NewClient creates a new PIM client using device code authentication.
+// NewClient creates a new PIM client using the best available delegated credential.
 func NewClient(ctx context.Context) (*Client, error) {
 	tenantID := os.Getenv("AZURE_TENANT_ID")
-	cred, err := azidentity.NewDeviceCodeCredential(&azidentity.DeviceCodeCredentialOptions{
-		TenantID: tenantID,
-		UserPrompt: func(ctx context.Context, msg azidentity.DeviceCodeMessage) error {
-			fmt.Fprintln(os.Stderr, msg.Message)
-			return nil
-		},
-	})
+	var credChain []azcore.TokenCredential
+
+	if cliCred, err := azidentity.NewAzureCLICredential(&azidentity.AzureCLICredentialOptions{TenantID: tenantID}); err == nil {
+		credChain = append(credChain, cliCred)
+	}
+
+	if psCred, err := azidentity.NewAzurePowerShellCredential(&azidentity.AzurePowerShellCredentialOptions{TenantID: tenantID}); err == nil {
+		credChain = append(credChain, psCred)
+	}
+
+	if allowDeviceLogin() {
+		if deviceCred, err := azidentity.NewDeviceCodeCredential(&azidentity.DeviceCodeCredentialOptions{
+			TenantID: tenantID,
+			UserPrompt: func(ctx context.Context, msg azidentity.DeviceCodeMessage) error {
+				fmt.Fprintln(os.Stderr, msg.Message)
+				return nil
+			},
+		}); err == nil {
+			credChain = append(credChain, deviceCred)
+		}
+	}
+
+	if len(credChain) == 0 {
+		return nil, fmt.Errorf("no supported Azure login found; sign in with 'az login' or 'Connect-AzAccount'")
+	}
+
+	cred, err := azidentity.NewChainedTokenCredential(credChain, nil)
 	if err != nil {
-		return nil, fmt.Errorf("create credential: %w", err)
+		return nil, fmt.Errorf("create credential chain: %w", err)
 	}
 
 	return &Client{
@@ -217,7 +238,7 @@ func (c *Client) GetActiveAssignments(principalID string) ([]ActiveAssignment, e
 		return nil, err
 	}
 
-	reqURL := fmt.Sprintf("%s/providers/Microsoft.Authorization/roleAssignmentSchedules?api-version=%s&$filter=asTarget()",
+	reqURL := fmt.Sprintf("%s/providers/Microsoft.Authorization/roleAssignmentScheduleInstances?api-version=%s&$filter=asTarget()",
 		ARMEndpoint, APIVersion)
 
 	resp, err := c.doRequest(http.MethodGet, reqURL, c.armToken, nil)
@@ -233,10 +254,9 @@ func (c *Client) GetActiveAssignments(principalID string) ([]ActiveAssignment, e
 				PrincipalID      string `json:"principalId"`
 				Scope            string `json:"scope"`
 				RoleDefinitionID string `json:"roleDefinitionId"`
-				ScheduleInfo     struct {
-					EndDateTime string `json:"endDateTime"`
-				} `json:"scheduleInfo"`
-				ExpandedProps struct {
+				StartDateTime    string `json:"startDateTime"`
+				EndDateTime      string `json:"endDateTime"`
+				ExpandedProps    struct {
 					Scope struct {
 						DisplayName string `json:"displayName"`
 					} `json:"scope"`
@@ -258,10 +278,10 @@ func (c *Client) GetActiveAssignments(principalID string) ([]ActiveAssignment, e
 			assignments = append(assignments, ActiveAssignment{
 				Name:             item.Name,
 				Scope:            item.Properties.Scope,
-				ScopeDisplay:     item.Properties.ExpandedProps.Scope.DisplayName,
+				ScopeDisplay:     defaultScopeDisplay(item.Properties.Scope, item.Properties.ExpandedProps.Scope.DisplayName),
 				RoleName:         item.Properties.ExpandedProps.RoleDefinition.DisplayName,
 				RoleDefinitionID: item.Properties.RoleDefinitionID,
-				EndDateTime:      item.Properties.ScheduleInfo.EndDateTime,
+				EndDateTime:      resolveEndTime(item.Properties.EndDateTime, item.Properties.StartDateTime),
 			})
 		}
 	}
@@ -401,4 +421,44 @@ func clampHours(hours int) int {
 		return MaxHours
 	}
 	return hours
+}
+
+func allowDeviceLogin() bool {
+	val := strings.ToLower(os.Getenv("PIM_ALLOW_DEVICE_LOGIN"))
+	return val == "1" || val == "true" || val == "yes"
+}
+
+func defaultScopeDisplay(scope, display string) string {
+	if strings.TrimSpace(display) != "" {
+		return display
+	}
+	switch {
+	case strings.HasPrefix(scope, "/subscriptions/"):
+		parts := strings.Split(scope, "/")
+		if len(parts) >= 3 {
+			return parts[2]
+		}
+	case strings.HasPrefix(scope, "/providers/Microsoft.Management/managementGroups/"):
+		parts := strings.Split(scope, "/")
+		if len(parts) >= 5 {
+			return parts[4]
+		}
+	case strings.Contains(scope, "/resourceGroups/"):
+		idx := strings.Index(scope, "/resourceGroups/")
+		if idx != -1 {
+			remainder := scope[idx+len("/resourceGroups/"):]
+			if slash := strings.Index(remainder, "/"); slash != -1 {
+				remainder = remainder[:slash]
+			}
+			return remainder
+		}
+	}
+	return scope
+}
+
+func resolveEndTime(end, start string) string {
+	if end != "" {
+		return end
+	}
+	return ""
 }

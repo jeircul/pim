@@ -42,6 +42,7 @@ try {
 
     Write-Host "Installed $binary to $InstallDir"
     Write-Host "Add $InstallDir to your PATH if it is not already."
+    Write-Host "Sign in with 'az login' or 'Connect-AzAccount' before using pim. Set PIM_ALLOW_DEVICE_LOGIN=true to allow device-code fallback."
 }
 finally {
     Remove-Item -LiteralPath $temp -Recurse -Force

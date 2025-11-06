@@ -1,5 +1,11 @@
 package azpim
 
+import (
+	"fmt"
+	"strings"
+	"time"
+)
+
 // User represents an Azure AD user
 type User struct {
 	ID                string `json:"id"`
@@ -25,12 +31,51 @@ type ActiveAssignment struct {
 	EndDateTime      string
 }
 
+// IsPermanent reports whether the assignment has no expiry (admin-managed/standing assignment)
+func (a ActiveAssignment) IsPermanent() bool {
+	return strings.TrimSpace(a.EndDateTime) == ""
+}
+
 // ExpiryDisplay returns a human-readable expiry string
 func (a ActiveAssignment) ExpiryDisplay() string {
 	if a.EndDateTime == "" {
-		return "unknown"
+		return "no expiry"
 	}
-	return "expires " + a.EndDateTime
+	end, err := time.Parse(time.RFC3339, a.EndDateTime)
+	if err != nil {
+		return a.EndDateTime
+	}
+	now := time.Now().UTC()
+	diff := end.Sub(now)
+	if diff > 0 {
+		return fmt.Sprintf("expires in %s", humanizeDuration(diff))
+	}
+	return fmt.Sprintf("expired %s ago", humanizeDuration(-diff))
+}
+
+func humanizeDuration(d time.Duration) string {
+	if d < time.Minute {
+		return "under a minute"
+	}
+	segments := []string{}
+	if d >= 24*time.Hour {
+		days := d / (24 * time.Hour)
+		segments = append(segments, fmt.Sprintf("%dd", days))
+		d -= days * 24 * time.Hour
+	}
+	if d >= time.Hour {
+		hours := d / time.Hour
+		segments = append(segments, fmt.Sprintf("%dh", hours))
+		d -= hours * time.Hour
+	}
+	if d >= time.Minute {
+		minutes := d / time.Minute
+		segments = append(segments, fmt.Sprintf("%dm", minutes))
+	}
+	if len(segments) == 0 {
+		segments = append(segments, "under a minute")
+	}
+	return strings.Join(segments, " ")
 }
 
 // ScheduleRequest represents a PIM schedule request body
