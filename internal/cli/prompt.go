@@ -76,8 +76,11 @@ func PromptMultiSelection[T any](items []T, displayFunc func(int, T) string, key
 	}
 	current := append([]viewItem[T](nil), original...)
 	keys := make([]string, len(items))
+	keysLower := make([]string, len(items))
 	for i, item := range items {
-		keys[i] = keyFunc(item)
+		key := keyFunc(item)
+		keys[i] = key
+		keysLower[i] = strings.ToLower(key)
 	}
 
 	printView(current, displayFunc)
@@ -118,6 +121,13 @@ func PromptMultiSelection[T any](items []T, displayFunc func(int, T) string, key
 				chosen = append(chosen, current[sel-1].value)
 			}
 			return chosen, nil
+		}
+
+		if matches, total := filterViewBySubstring(original, keysLower, lower, 20); total > 0 {
+			current = matches
+			fmt.Printf("\nShowing %d of %d match(es) containing %q:\n", len(matches), total, input)
+			printView(current, displayFunc)
+			continue
 		}
 
 		matches := fuzzy.RankFindFold(input, keys)
@@ -211,6 +221,30 @@ func tryParseSelections(input string, limit int) ([]int, bool, error) {
 		return nil, true, fmt.Errorf("no selections provided")
 	}
 	return selections, true, nil
+}
+
+func filterViewBySubstring[T any](all []viewItem[T], lowerKeys []string, needle string, limit int) ([]viewItem[T], int) {
+	if needle == "" {
+		return nil, 0
+	}
+	total := 0
+	filtered := make([]viewItem[T], 0, min(limit, len(all)))
+	for i, key := range lowerKeys {
+		if strings.Contains(key, needle) {
+			total++
+			if len(filtered) < limit {
+				filtered = append(filtered, all[i])
+			}
+		}
+	}
+	return filtered, total
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // PromptJustification requests a justification from the user, falling back to an existing value when provided.

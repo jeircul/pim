@@ -80,3 +80,37 @@ func TestTryParseSelections(t *testing.T) {
 		})
 	}
 }
+
+func TestFilterViewBySubstring(t *testing.T) {
+	items := []viewItem[string]{
+		{idx: 0, value: "S001"},
+		{idx: 1, value: "S002"},
+		{idx: 2, value: "S101"},
+		{idx: 3, value: "A200"},
+	}
+	keys := []string{"s001-alpha", "s002-beta", "s101-gamma", "a200"}
+
+	filtered, total := filterViewBySubstring(items, keys, "s00", 10)
+	if total != 2 {
+		t.Fatalf("expected total=2, got %d", total)
+	}
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 filtered items, got %d", len(filtered))
+	}
+	if filtered[0].value != "S001" || filtered[1].value != "S002" {
+		t.Fatalf("unexpected order: %#v", filtered)
+	}
+
+	filtered, total = filterViewBySubstring(items, keys, "s1", 1)
+	if total != 1 {
+		t.Fatalf("expected total=1, got %d", total)
+	}
+	if len(filtered) != 1 || filtered[0].value != "S101" {
+		t.Fatalf("expected S101, got %#v", filtered)
+	}
+
+	filtered, total = filterViewBySubstring(items, keys, "missing", 10)
+	if total != 0 || len(filtered) != 0 {
+		t.Fatalf("expected no matches, got total=%d filtered=%d", total, len(filtered))
+	}
+}
