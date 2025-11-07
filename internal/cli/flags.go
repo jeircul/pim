@@ -40,7 +40,6 @@ type ActivateConfig struct {
 	Roles            []string
 	ResourceGroups   []string
 	Auto             bool
-	LegacyMode       bool
 }
 
 // ParseArgs parses os.Args[1:] style arguments into a Command.
@@ -51,7 +50,7 @@ func ParseArgs(args []string) (Command, error) {
 
 	switch args[0] {
 	case "activate", "a":
-		return parseActivate(args[1:], false)
+		return parseActivate(args[1:])
 	case "status", "st":
 		return Command{Kind: CommandStatus}, nil
 	case "deactivate", "deact", "off":
@@ -61,14 +60,11 @@ func ParseArgs(args []string) (Command, error) {
 	case "help", "-h", "--help":
 		return Command{Kind: CommandHelp}, nil
 	default:
-		if strings.HasPrefix(args[0], "-") {
-			return parseActivate(args, true)
-		}
 		return Command{}, fmt.Errorf("unknown command %q", args[0])
 	}
 }
 
-func parseActivate(args []string, legacy bool) (Command, error) {
+func parseActivate(args []string) (Command, error) {
 	var cfg ActivateConfig
 	var mgFilters, subFilters, scopeFilters, roleFilters, rgFilters stringSliceFlag
 
@@ -102,7 +98,6 @@ func parseActivate(args []string, legacy bool) (Command, error) {
 	cfg.ScopeContains = scopeFilters.Slice()
 	cfg.Roles = roleFilters.Slice()
 	cfg.ResourceGroups = rgFilters.Slice()
-	cfg.LegacyMode = legacy
 
 	if err := cfg.Validate(); err != nil {
 		return Command{}, err

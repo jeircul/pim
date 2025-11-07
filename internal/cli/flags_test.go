@@ -24,16 +24,9 @@ func TestParseArgsActivate(t *testing.T) {
 	}
 }
 
-func TestParseArgsLegacyActivate(t *testing.T) {
-	cmd, err := ParseArgs([]string{"-j", "Legacy"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cmd.Kind != CommandActivate {
-		t.Fatalf("expected activate command, got %v", cmd.Kind)
-	}
-	if !cmd.Activate.LegacyMode {
-		t.Fatalf("expected legacy mode to be true")
+func TestParseArgsRejectsLegacyShorthand(t *testing.T) {
+	if _, err := ParseArgs([]string{"-j", "Legacy"}); err == nil {
+		t.Fatal("expected error when using legacy shorthand")
 	}
 }
 
