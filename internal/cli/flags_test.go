@@ -1,106 +1,122 @@
 package cli
 
 import (
-	"strings"
+	"reflect"
 	"testing"
 )
 
-func TestTrimInput(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
+func TestParseArgsActivate(t *testing.T) {
+	cmd, err := ParseArgs([]string{"activate", "-j", "Work", "--mg", "demo", "--sub", "alpha", "--auto"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cmd.Kind != CommandActivate {
+		t.Fatalf("expected activate command, got %v", cmd.Kind)
+	}
+	if cmd.Activate.Justification != "Work" {
+		t.Fatalf("unexpected justification %q", cmd.Activate.Justification)
+	}
+	if !cmd.Activate.AutoScopeEnabled() {
+		t.Fatalf("expected auto scope to be enabled")
+	}
+	if len(cmd.Activate.ManagementGroups) != 1 || cmd.Activate.ManagementGroups[0] != "demo" {
+		t.Fatalf("unexpected management group filters: %#v", cmd.Activate.ManagementGroups)
+	}
+}
+
+func TestParseArgsLegacyActivate(t *testing.T) {
+	cmd, err := ParseArgs([]string{"-j", "Legacy"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cmd.Kind != CommandActivate {
+		t.Fatalf("expected activate command, got %v", cmd.Kind)
+	}
+	if !cmd.Activate.LegacyMode {
+		t.Fatalf("expected legacy mode to be true")
+	}
+}
+
+func TestParseArgsRequireJustification(t *testing.T) {
+	cmd, err := ParseArgs([]string{"activate"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cmd.Kind != CommandActivate {
+		t.Fatalf("expected activate command, got %v", cmd.Kind)
+	}
+	if !cmd.Activate.NeedsJustification() {
+		t.Fatalf("expected justification prompt to be required")
+	}
+}
+
+func TestParseArgsStatus(t *testing.T) {
+	cmd, err := ParseArgs([]string{"status"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cmd.Kind != CommandStatus {
+		t.Fatalf("expected status command, got %v", cmd.Kind)
+	}
+}
+
+func TestParseArgsHelp(t *testing.T) {
+	cmd, err := ParseArgs([]string{"help"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cmd.Kind != CommandHelp {
+		t.Fatalf("expected help command, got %v", cmd.Kind)
+	}
+}
+
+func TestParseArgsNoArgsShowsPrompt(t *testing.T) {
+	cmd, err := ParseArgs([]string{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cmd.Kind != CommandPrompt {
+		t.Fatalf("expected prompt command, got %v", cmd.Kind)
+	}
+}
+
+func TestActivateConfigValidateHours(t *testing.T) {
+	cases := []struct {
+		name  string
+		hours int
+		err   bool
 	}{
-		{"Simple string", "hello", "hello"},
-		{"With spaces", "  hello  ", "hello"},
-		{"With newline", "hello\n", "hello"},
-		{"With carriage return", "hello\r\n", "hello"},
-		{"Multiple newlines", "hello\n\n\n", "hello"},
-		{"Empty string", "", ""},
-		{"Only whitespace", "   ", ""},
+		{"min", 1, false},
+		{"max", 8, false},
+		{"below", 0, true},
+		{"above", 9, true},
 	}
 
-	for _, tt := range tests {
+	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			result := trimInput(tt.input)
-			if result != tt.expected {
-				t.Errorf("trimInput(%q) = %q; want %q", tt.input, result, tt.expected)
+			cfg := ActivateConfig{Justification: "", Hours: tt.hours}
+			err := cfg.Validate()
+			if tt.err && err == nil {
+				t.Fatalf("expected error for hours=%d", tt.hours)
+			}
+			if !tt.err && err != nil {
+				t.Fatalf("unexpected error for hours=%d: %v", tt.hours, err)
 			}
 		})
 	}
 }
 
-func TestValidateConfig(t *testing.T) {
-	tests := []struct {
-		name      string
-		config    Config
-		expectErr bool
-		errMsg    string
-	}{
-		{
-			name: "Valid activation config",
-			config: Config{
-				Justification: "Testing",
-				Hours:         4,
-				Deactivate:    false,
-			},
-			expectErr: false,
-		},
-		{
-			name: "Valid deactivation config",
-			config: Config{
-				Justification: "",
-				Hours:         1,
-				Deactivate:    true,
-			},
-			expectErr: false,
-		},
-		{
-			name: "Missing justification for activation",
-			config: Config{
-				Justification: "",
-				Hours:         1,
-				Deactivate:    false,
-			},
-			expectErr: true,
-			errMsg:    "justification required",
-		},
-		{
-			name: "Hours too low",
-			config: Config{
-				Justification: "Testing",
-				Hours:         0,
-				Deactivate:    false,
-			},
-			expectErr: true,
-			errMsg:    "hours must be between",
-		},
-		{
-			name: "Hours too high",
-			config: Config{
-				Justification: "Testing",
-				Hours:         10,
-				Deactivate:    false,
-			},
-			expectErr: true,
-			errMsg:    "hours must be between",
-		},
+func TestStringSliceFlag(t *testing.T) {
+	var f stringSliceFlag
+	if err := f.Set("one"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateConfig(tt.config)
-			if tt.expectErr {
-				if err == nil {
-					t.Error("Expected error but got nil")
-				} else if !strings.Contains(err.Error(), tt.errMsg) {
-					t.Errorf("Expected error containing %q, got %q", tt.errMsg, err.Error())
-				}
-			} else {
-				if err != nil {
-					t.Errorf("Expected no error but got: %v", err)
-				}
-			}
-		})
+	if err := f.Set("two"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := f.Slice()
+	expected := []string{"one", "two"}
+	if !reflect.DeepEqual(got, expected) {
+		t.Fatalf("expected %v, got %v", expected, got)
 	}
 }

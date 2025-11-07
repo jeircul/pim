@@ -212,3 +212,135 @@ func tryParseSelections(input string, limit int) ([]int, bool, error) {
 	}
 	return selections, true, nil
 }
+
+// PromptJustification requests a justification from the user, falling back to an existing value when provided.
+func PromptJustification(existing string) (string, error) {
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		label := "Justification"
+		if existing != "" {
+			fmt.Printf("%s [%s] (enter to keep, 'q' to cancel): ", label, existing)
+		} else {
+			fmt.Printf("%s (required, 'q' to cancel): ", label)
+		}
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			return "", fmt.Errorf("read justification: %w", err)
+		}
+		value := trimInput(input)
+		if isQuit(value) {
+			return "", azpim.ErrUserCancelled
+		}
+		if value == "" {
+			if existing != "" {
+				return existing, nil
+			}
+			fmt.Println("❌ Justification is required.")
+			continue
+		}
+		return value, nil
+	}
+}
+
+// PromptHours collects a duration within the allowed activation window.
+func PromptHours(current int) (int, error) {
+	if current < azpim.MinHours || current > azpim.MaxHours {
+		current = azpim.MinHours
+	}
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		fmt.Printf("Duration in hours (%d-%d) [%d]: ", azpim.MinHours, azpim.MaxHours, current)
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			return 0, fmt.Errorf("read duration: %w", err)
+		}
+		value := trimInput(input)
+		if isQuit(value) {
+			return 0, azpim.ErrUserCancelled
+		}
+		if value == "" {
+			return current, nil
+		}
+		hours, convErr := strconv.Atoi(value)
+		if convErr != nil {
+			fmt.Println("❌ Please enter a whole number of hours.")
+			continue
+		}
+		if hours < azpim.MinHours || hours > azpim.MaxHours {
+			fmt.Printf("❌ Hours must be between %d and %d.\n", azpim.MinHours, azpim.MaxHours)
+			continue
+		}
+		return hours, nil
+	}
+}
+
+// PromptYesNo asks a yes/no question with a default answer.
+func PromptYesNo(question string, defaultYes bool) (bool, error) {
+	reader := bufio.NewReader(os.Stdin)
+	var suffix string
+	if defaultYes {
+		suffix = "[Y/n]"
+	} else {
+		suffix = "[y/N]"
+	}
+	for {
+		fmt.Printf("%s %s: ", question, suffix)
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			return false, fmt.Errorf("read response: %w", err)
+		}
+		value := strings.ToLower(trimInput(input))
+		if value == "" {
+			return defaultYes, nil
+		}
+		if isQuit(value) {
+			return false, azpim.ErrUserCancelled
+		}
+		switch value {
+		case "y", "yes":
+			return true, nil
+		case "n", "no":
+			return false, nil
+		default:
+			fmt.Println("❌ Please answer 'y' or 'n'.")
+		}
+	}
+}
+
+// PromptCSV captures a comma-separated list of values, trimming whitespace.
+func PromptCSV(question string, existing []string) ([]string, error) {
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		prompt := question
+		if len(existing) > 0 {
+			prompt = fmt.Sprintf("%s [%s]", question, strings.Join(existing, ","))
+		}
+		fmt.Printf("%s (enter to skip, 'q' to cancel): ", prompt)
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			return nil, fmt.Errorf("read list: %w", err)
+		}
+		value := trimInput(input)
+		if isQuit(value) {
+			return nil, azpim.ErrUserCancelled
+		}
+		if value == "" {
+			return append([]string(nil), existing...), nil
+		}
+		parts := strings.Split(value, ",")
+		result := make([]string, 0, len(parts))
+		for _, part := range parts {
+			trimmed := strings.TrimSpace(part)
+			if trimmed == "" {
+				continue
+			}
+			result = append(result, trimmed)
+		}
+		return result, nil
+	}
+}
+
+func isQuit(value string) bool {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	return lower == "q" || lower == "quit"
+}

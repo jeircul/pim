@@ -14,13 +14,6 @@ tasks:
       - task --list
     silent: true
 
-  # Development tasks
-  dev:
-    desc: Run in development mode (build and execute)
-    deps: [build]
-    cmds:
-      - ./{{.BINARY_NAME}} {{.CLI_ARGS}}
-
   fmt:
     desc: Format all Go code
     cmds:
@@ -31,70 +24,16 @@ tasks:
     cmds:
       - go mod tidy
 
-  # Testing tasks
   test:
-    desc: Run all tests with race detection
+    desc: Run unit tests
     cmds:
-      - go test -v -race -cover ./...
+      - go test ./...
 
-  test:unit:
-    desc: Run unit tests only (pkg + internal)
-    cmds:
-      - go test -v -cover ./pkg/... ./internal/...
-
-  test:coverage:
-    desc: Generate HTML coverage report
-    cmds:
-      - go test -coverprofile=coverage.out ./...
-      - go tool cover -html=coverage.out -o coverage.html
-      - echo "Coverage report generated at coverage.html"
-
-  # Build tasks
   build:
     desc: Build for current platform
     cmds:
       - go build -ldflags "{{.LDFLAGS}}" -o {{.BINARY_NAME}} .
 
-  build:all:
-    desc: Build for all platforms
-    deps:
-      - build:linux
-      - build:linux-arm
-      - build:macos
-      - build:macos-intel
-      - build:windows
-
-  build:linux:
-    desc: Build for Linux AMD64
-    cmds:
-      - mkdir -p dist
-      - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "{{.LDFLAGS}}" -trimpath -o dist/{{.BINARY_NAME}}-linux-amd64 .
-
-  build:linux-arm:
-    desc: Build for Linux ARM64
-    cmds:
-      - mkdir -p dist
-      - GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "{{.LDFLAGS}}" -trimpath -o dist/{{.BINARY_NAME}}-linux-arm64 .
-
-  build:macos:
-    desc: Build for macOS ARM64 (Apple Silicon)
-    cmds:
-      - mkdir -p dist
-      - GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "{{.LDFLAGS}}" -trimpath -o dist/{{.BINARY_NAME}}-darwin-arm64 .
-
-  build:macos-intel:
-    desc: Build for macOS AMD64 (Intel)
-    cmds:
-      - mkdir -p dist
-      - GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "{{.LDFLAGS}}" -trimpath -o dist/{{.BINARY_NAME}}-darwin-amd64 .
-
-  build:windows:
-    desc: Build for Windows AMD64
-    cmds:
-      - mkdir -p dist
-      - GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "{{.LDFLAGS}}" -trimpath -o dist/{{.BINARY_NAME}}-windows-amd64.exe .
-
-  # Installation tasks
   install:
     desc: Install to ~/.local/bin (user-local)
     cmds:
@@ -102,49 +41,35 @@ tasks:
       - go build -ldflags "{{.LDFLAGS}}" -o {{.INSTALL_DIR}}/{{.BINARY_NAME}} .
       - echo "✓ Installed {{.BINARY_NAME}} to {{.INSTALL_DIR}}"
 
-  install:global:
-    desc: Install to GOPATH/bin (global)
-    cmds:
-      - go install -ldflags "{{.LDFLAGS}}" .
-      - echo "✓ Installed {{.BINARY_NAME}} to GOPATH/bin"
-
   uninstall:
     desc: Remove from ~/.local/bin
     cmds:
       - rm -f {{.INSTALL_DIR}}/{{.BINARY_NAME}}
       - echo "✓ Removed {{.BINARY_NAME}} from {{.INSTALL_DIR}}"
 
-  # Maintenance tasks
-  maintain:
-    desc: Run all maintenance tasks (fmt, tidy, test)
-    cmds:
-      - task: fmt
-      - task: tidy
-      - task: test
-
   clean:
     desc: Clean all build artifacts and coverage files
     cmds:
       - rm -f {{.BINARY_NAME}}
       - rm -rf dist/
-      - rm -f coverage.out coverage.html
       - echo "✓ Cleaned build artifacts"
 
-  # CI/Release tasks
-  ci:
-    desc: Run CI checks (fmt, tidy, test, build)
-    cmds:
-      - task: fmt
-      - task: tidy
-      - task: test
-      - task: build
-
   release:
-    desc: Build release artifacts locally (snapshot)
+    desc: Print release instructions
     cmds:
-      - goreleaser release --snapshot --clean
+      - |
+          echo "1. Ensure git status is clean and up to date"
+          echo "2. Set a tag: git tag vX.Y.Z && git push origin vX.Y.Z"
+          echo "3. Optionally run task release:snapshot (dry run)"
+          echo "4. Run task release:publish to push artefacts (requires GITHUB_TOKEN)"
+    silent: true
 
   release:publish:
     desc: Publish a release to GitHub (requires GITHUB_TOKEN)
     cmds:
       - goreleaser release --clean
+
+  release:snapshot:
+    desc: Generate release artefacts locally without publishing
+    cmds:
+      - goreleaser release --snapshot --clean

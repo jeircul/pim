@@ -26,17 +26,23 @@ func main() {
 }
 
 func run() error {
-	// Parse command-line flags
-	cfg, showHelp, err := cli.ParseFlags()
+	cmd, err := cli.ParseArgs(os.Args[1:])
 	if err != nil {
 		return err
 	}
 
-	if showHelp {
-		return nil
+	if cmd.Kind == cli.CommandPrompt {
+		cmd, err = cli.PromptCommand()
+		if err != nil {
+			return err
+		}
 	}
 
-	if cfg.ShowVersion {
+	switch cmd.Kind {
+	case cli.CommandHelp:
+		cli.PrintHelp(cmd.HelpTopic)
+		return nil
+	case cli.CommandVersion:
 		fmt.Printf("pim %s\n", Version)
 		return nil
 	}
@@ -59,13 +65,16 @@ func run() error {
 	fmt.Printf("Authenticated as: %s (%s)\n", user.DisplayName, user.UserPrincipalName)
 
 	// Handle status, deactivation, or activation flow
-	if cfg.Status {
+	switch cmd.Kind {
+	case cli.CommandStatus:
 		return cli.HandleStatus(ctx, client, user.ID)
-	}
-
-	if cfg.Deactivate {
+	case cli.CommandDeactivate:
 		return cli.HandleDeactivation(ctx, client, user.ID)
+	case cli.CommandActivate:
+		return cli.HandleActivation(ctx, client, user.ID, cmd.Activate)
+	case cli.CommandPrompt:
+		return fmt.Errorf("no command selected")
+	default:
+		return fmt.Errorf("unsupported command")
 	}
-
-	return cli.HandleActivation(ctx, client, user.ID, cfg)
 }

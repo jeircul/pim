@@ -96,7 +96,24 @@ func HandleStatus(ctx context.Context, client *azpim.Client, principalID string)
 }
 
 // HandleActivation processes the activation flow
-func HandleActivation(ctx context.Context, client *azpim.Client, principalID string, cfg Config) error {
+func HandleActivation(ctx context.Context, client *azpim.Client, principalID string, cfg ActivateConfig) error {
+	cfg.EnsureDefaults()
+
+	if cfg.NeedsJustification() {
+		fmt.Println("A justification is required before we can submit an activation request.")
+		justification, err := PromptJustification(cfg.Justification)
+		if err != nil {
+			return err
+		}
+		cfg.Justification = justification
+	}
+
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+
+	printActivationSummary(cfg)
+
 	roles, err := client.GetEligibleRoles()
 	if err != nil {
 		return fmt.Errorf("get eligible roles: %w", err)
@@ -146,7 +163,7 @@ func HandleActivation(ctx context.Context, client *azpim.Client, principalID str
 	return nil
 }
 
-func determineActivationScope(client *azpim.Client, role azpim.Role, cfg Config) (string, string, error) {
+func determineActivationScope(client *azpim.Client, role azpim.Role, cfg ActivateConfig) (string, string, error) {
 	defaultScope := role.Scope
 	defaultDisplay := role.ScopeDisplay
 
@@ -186,7 +203,7 @@ func determineActivationScope(client *azpim.Client, role azpim.Role, cfg Config)
 	return promptManagementGroupScope(client, role, subs, cfg)
 }
 
-func autoSelectManagementGroupScope(client *azpim.Client, role azpim.Role, subs []azpim.Subscription, cfg Config) (string, string, bool, error) {
+func autoSelectManagementGroupScope(client *azpim.Client, role azpim.Role, subs []azpim.Subscription, cfg ActivateConfig) (string, string, bool, error) {
 	if len(cfg.Subscriptions) == 0 {
 		return "", "", false, nil
 	}
@@ -246,7 +263,7 @@ func autoSelectResourceGroup(client *azpim.Client, subscription azpim.Subscripti
 	return chosen.Scope(), label, true, nil
 }
 
-func promptManagementGroupScope(client *azpim.Client, role azpim.Role, subs []azpim.Subscription, cfg Config) (string, string, error) {
+func promptManagementGroupScope(client *azpim.Client, role azpim.Role, subs []azpim.Subscription, cfg ActivateConfig) (string, string, error) {
 	options := []scopeOption{
 		{Label: fmt.Sprintf("Activate entire management group (%s)", role.ScopeDisplay), Kind: scopeOptionManagementGroup},
 		{Label: "Scope to a subscription", Kind: scopeOptionSubscription},
@@ -286,7 +303,7 @@ func promptManagementGroupScope(client *azpim.Client, role azpim.Role, subs []az
 	}
 }
 
-func promptSubscription(subs []azpim.Subscription, cfg Config) (azpim.Subscription, error) {
+func promptSubscription(subs []azpim.Subscription, cfg ActivateConfig) (azpim.Subscription, error) {
 	display := func(i int, s azpim.Subscription) string {
 		return fmt.Sprintf("  %2d) %s (%s)", i, s.DisplayName, s.ID)
 	}
@@ -301,7 +318,7 @@ func promptSubscription(subs []azpim.Subscription, cfg Config) (azpim.Subscripti
 	return PromptSingleSelection(subs, display, key, "Select subscription scope")
 }
 
-func promptResourceGroup(client *azpim.Client, subscription azpim.Subscription, cfg Config) (string, string, error) {
+func promptResourceGroup(client *azpim.Client, subscription azpim.Subscription, cfg ActivateConfig) (string, string, error) {
 	fmt.Printf("\nFetching resource groups for %s (%s)...\n", subscription.DisplayName, subscription.ID)
 	groups, err := client.ListSubscriptionResourceGroups(subscription.ID)
 	if err != nil {
@@ -402,7 +419,7 @@ func isAuthorizationError(err error) bool {
 	return strings.Contains(msg, "authorizationfailed") || strings.Contains(msg, "http 403") || strings.Contains(msg, "status code 403")
 }
 
-func filterEligibleRoles(roles []azpim.Role, cfg Config) []azpim.Role {
+func filterEligibleRoles(roles []azpim.Role, cfg ActivateConfig) []azpim.Role {
 	if !cfg.HasFilters() {
 		return roles
 	}
@@ -427,6 +444,43 @@ func filterEligibleRoles(roles []azpim.Role, cfg Config) []azpim.Role {
 		filtered = append(filtered, role)
 	}
 	return filtered
+}
+
+func printActivationSummary(cfg ActivateConfig) {
+	fmt.Println("\nActivation overview:")
+	fmt.Printf("  Justification : %s\n", cfg.Justification)
+	fmt.Printf("  Duration      : %d hour(s)\n", cfg.Hours)
+	fmt.Printf("  Mode          : %s\n", cfg.ModeLabel())
+	if cfg.LegacyMode {
+		fmt.Println("  Legacy entry  : using legacy shorthand syntax")
+	}
+	if cfg.AutoScopeEnabled() {
+		fmt.Println("  Auto scope    : enabled (hints will be applied automatically)")
+	} else if cfg.HasTargetHints() {
+		fmt.Println("  Auto scope    : disabled (hints will guide prompts)")
+	}
+	printFilterSummary(cfg)
+	fmt.Println()
+}
+
+func printFilterSummary(cfg ActivateConfig) {
+	if !cfg.HasFilters() {
+		fmt.Println("  Filters       : none (all eligible roles will be shown)")
+		return
+	}
+	fmt.Println("  Filters       :")
+	printFilterGroup("    management group", cfg.ManagementGroups)
+	printFilterGroup("    subscription", cfg.Subscriptions)
+	printFilterGroup("    resource group", cfg.ResourceGroups)
+	printFilterGroup("    role", cfg.Roles)
+	printFilterGroup("    scope contains", cfg.ScopeContains)
+}
+
+func printFilterGroup(label string, values []string) {
+	if len(values) == 0 {
+		return
+	}
+	fmt.Printf("%s: %s\n", label, strings.Join(values, ", "))
 }
 
 func matchesManagementGroup(role azpim.Role, filters []string) bool {
