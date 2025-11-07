@@ -9,6 +9,8 @@ Opinionated command-line tool for activating, deactivating, and checking Azure P
 - 👀 Inspect current elevations with `--status`.
 - 💻 Works on macOS, Linux, and Windows (amd64 / arm64).
 - 🔑 Authenticates using your existing Azure CLI or Azure PowerShell login.
+- 🔍 Filter and fuzzy-search hundreds of eligible scopes, then activate multiple roles in one go.
+- 🧭 Narrow management group activations down to a single subscription or resource group when needed.
 
 ## 🚀 Quick Install
 
@@ -56,7 +58,28 @@ pim -s
 
 # Discover available options
 pim -h
+
+# Activate matching subscription roles without a prompt
+pim -j "Deploy fix" --subscription platform-hub --role contributor
+
+# Elevate multiple scopes in one pass (comma-separated selection)
+pim -j "Investigate incident" --mg tenant-root-group
+
+# Activate a management-group eligible role on a single subscription
+pim -j "Scope to subscription" --mg org-platform --subscription finance-prod
+
+# Headlessly scope to a resource group beneath a subscription
+pim -j "Focus on resource group" --subscription finance-prod --resource-group analytics-rg
+
 ```
+
+### 🔎 Filtering & search helpers
+
+- `--management-group`, `--subscription`, `--scope-contains`, and `--role` narrow the eligible list (flags can repeat).
+- `--resource-group` targets a specific resource group beneath a subscription.
+- When a single role matches your filters the activation is queued immediately—perfect for scripts.
+- During the prompt, type free-form text to fuzzy search, `all` to view the full list again, or `1,4,7` to activate several roles at once.
+- Management group roles prompt you to choose child subscriptions or resource groups—filters auto-select them when only one match remains.
 
 Sign in ahead of time with `az login` (bash/zsh) or `Connect-AzAccount` (PowerShell). The CLI automatically reuses whichever session is available. Set `PIM_ALLOW_DEVICE_LOGIN=true` if you want the tool to fall back to interactive device code prompts.
 

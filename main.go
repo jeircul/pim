@@ -67,5 +67,5 @@ func run() error {
 		return cli.HandleDeactivation(ctx, client, user.ID)
 	}
 
-	return cli.HandleActivation(ctx, client, user.ID, cfg.Justification, cfg.Hours)
+	return cli.HandleActivation(ctx, client, user.ID, cfg)
 }

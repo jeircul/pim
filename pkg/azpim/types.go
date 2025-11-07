@@ -15,10 +15,11 @@ type User struct {
 
 // Role represents an eligible PIM role
 type Role struct {
-	Scope            string
-	ScopeDisplay     string
-	RoleName         string
-	RoleDefinitionID string
+	Scope                 string
+	ScopeDisplay          string
+	RoleName              string
+	RoleDefinitionID      string
+	EligibilityScheduleID string
 }
 
 // ActiveAssignment represents an active PIM role assignment
@@ -85,11 +86,12 @@ type ScheduleRequest struct {
 
 // ScheduleProperties contains the PIM request details
 type ScheduleProperties struct {
-	PrincipalID      string        `json:"principalId"`
-	RoleDefinitionID string        `json:"roleDefinitionId"`
-	RequestType      string        `json:"requestType"`
-	Justification    string        `json:"justification,omitempty"`
-	ScheduleInfo     *ScheduleInfo `json:"scheduleInfo,omitempty"`
+	PrincipalID                     string        `json:"principalId"`
+	RoleDefinitionID                string        `json:"roleDefinitionId"`
+	RequestType                     string        `json:"requestType"`
+	Justification                   string        `json:"justification,omitempty"`
+	LinkedRoleEligibilityScheduleID string        `json:"linkedRoleEligibilityScheduleId,omitempty"`
+	ScheduleInfo                    *ScheduleInfo `json:"scheduleInfo,omitempty"`
 }
 
 // ScheduleInfo contains schedule timing information
@@ -110,4 +112,27 @@ type ScheduleResponse struct {
 	Properties struct {
 		Status string `json:"status"`
 	} `json:"properties"`
+}
+
+// Subscription represents a child subscription under a management group
+type Subscription struct {
+	ID          string
+	DisplayName string
+}
+
+// Scope returns the subscription scope path
+func (s Subscription) Scope() string {
+	return "/subscriptions/" + s.ID
+}
+
+// ResourceGroup represents a resource group inside a subscription
+type ResourceGroup struct {
+	SubscriptionID string
+	Name           string
+	ID             string
+}
+
+// Scope returns the resource group scope path
+func (rg ResourceGroup) Scope() string {
+	return fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", rg.SubscriptionID, rg.Name)
 }

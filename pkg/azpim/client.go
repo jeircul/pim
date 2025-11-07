@@ -30,6 +30,12 @@ type Client struct {
 const (
 	// APIVersion is the Azure PIM API version
 	APIVersion = "2020-10-01"
+	// ManagementGroupSubscriptionsAPIVersion is the API version for listing management group subscriptions
+	ManagementGroupSubscriptionsAPIVersion = "2023-04-01"
+	// EligibleChildResourcesAPIVersion is the API version for eligible child resources
+	EligibleChildResourcesAPIVersion = "2020-10-01"
+	// ResourceGroupsAPIVersion is the API version for listing resource groups
+	ResourceGroupsAPIVersion = "2021-04-01"
 	// ARMEndpoint is the Azure Resource Manager endpoint
 	ARMEndpoint = "https://management.azure.com"
 	// GraphEndpoint is the Microsoft Graph API endpoint
@@ -200,6 +206,8 @@ func (c *Client) GetEligibleRoles() ([]Role, error) {
 
 	var result struct {
 		Value []struct {
+			ID         string `json:"id"`
+			Name       string `json:"name"`
 			Properties struct {
 				Scope            string `json:"scope"`
 				RoleDefinitionID string `json:"roleDefinitionId"`
@@ -222,14 +230,171 @@ func (c *Client) GetEligibleRoles() ([]Role, error) {
 	roles := make([]Role, 0, len(result.Value))
 	for _, item := range result.Value {
 		roles = append(roles, Role{
-			Scope:            item.Properties.Scope,
-			ScopeDisplay:     item.Properties.ExpandedProps.Scope.DisplayName,
-			RoleName:         item.Properties.ExpandedProps.RoleDefinition.DisplayName,
-			RoleDefinitionID: item.Properties.RoleDefinitionID,
+			Scope:                 item.Properties.Scope,
+			ScopeDisplay:          item.Properties.ExpandedProps.Scope.DisplayName,
+			RoleName:              item.Properties.ExpandedProps.RoleDefinition.DisplayName,
+			RoleDefinitionID:      item.Properties.RoleDefinitionID,
+			EligibilityScheduleID: item.ID,
 		})
 	}
 
 	return roles, nil
+}
+
+// ListManagementGroupSubscriptions returns subscriptions under the specified management group
+func (c *Client) ListManagementGroupSubscriptions(mgID string) ([]Subscription, error) {
+	if err := c.ensureTokens(); err != nil {
+		return nil, err
+	}
+
+	mgID = strings.TrimSpace(mgID)
+	if mgID == "" {
+		return nil, fmt.Errorf("management group id cannot be empty")
+	}
+
+	childSubs, childErr := c.listEligibleChildSubscriptions(mgID)
+	if childErr == nil && len(childSubs) > 0 {
+		return childSubs, nil
+	}
+
+	legacySubs, legacyErr := c.listManagementGroupSubscriptionsLegacy(mgID)
+	if legacyErr == nil {
+		// Either the new API returned no subscriptions or failed but the legacy call succeeded.
+		return legacySubs, nil
+	}
+
+	if childErr != nil {
+		return nil, fmt.Errorf("eligible child resources: %w; legacy query: %v", childErr, legacyErr)
+	}
+
+	return nil, legacyErr
+}
+
+func (c *Client) listEligibleChildSubscriptions(mgID string) ([]Subscription, error) {
+	reqURL := fmt.Sprintf("%s/providers/Microsoft.Management/managementGroups/%s/providers/Microsoft.Authorization/eligibleChildResources?api-version=%s&getAllChildren=true",
+		ARMEndpoint, url.PathEscape(mgID), EligibleChildResourcesAPIVersion)
+
+	subs := []Subscription{}
+	for reqURL != "" {
+		resp, err := c.doRequest(http.MethodGet, reqURL, c.armToken, nil)
+		if err != nil {
+			return nil, fmt.Errorf("list eligible child resources for management group %s: %w", mgID, err)
+		}
+		var result struct {
+			Value []struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+				Type string `json:"type"`
+			} `json:"value"`
+			NextLink string `json:"nextLink"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("decode eligible child resources response: %w", err)
+		}
+		resp.Body.Close()
+		for _, item := range result.Value {
+			if !strings.EqualFold(item.Type, "subscription") {
+				continue
+			}
+			subID := SubscriptionIDFromScope(item.ID)
+			if subID == "" {
+				continue
+			}
+			subs = append(subs, Subscription{
+				ID:          subID,
+				DisplayName: item.Name,
+			})
+		}
+		reqURL = result.NextLink
+	}
+
+	return subs, nil
+}
+
+func (c *Client) listManagementGroupSubscriptionsLegacy(mgID string) ([]Subscription, error) {
+	reqURL := fmt.Sprintf("%s/providers/Microsoft.Management/managementGroups/%s/subscriptions?api-version=%s",
+		ARMEndpoint, url.PathEscape(mgID), ManagementGroupSubscriptionsAPIVersion)
+
+	subs := []Subscription{}
+	for reqURL != "" {
+		resp, err := c.doRequest(http.MethodGet, reqURL, c.armToken, nil)
+		if err != nil {
+			return nil, fmt.Errorf("list subscriptions for management group %s: %w", mgID, err)
+		}
+		var result struct {
+			Value []struct {
+				ID         string `json:"id"`
+				Name       string `json:"name"`
+				Properties struct {
+					DisplayName string `json:"displayName"`
+				} `json:"properties"`
+			} `json:"value"`
+			NextLink string `json:"nextLink"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("decode management group subscriptions: %w", err)
+		}
+		resp.Body.Close()
+		for _, item := range result.Value {
+			display := item.Properties.DisplayName
+			if strings.TrimSpace(display) == "" {
+				display = item.Name
+			}
+			subs = append(subs, Subscription{
+				ID:          item.Name,
+				DisplayName: display,
+			})
+		}
+		reqURL = result.NextLink
+	}
+
+	return subs, nil
+}
+
+// ListSubscriptionResourceGroups lists resource groups for the given subscription ID
+func (c *Client) ListSubscriptionResourceGroups(subscriptionID string) ([]ResourceGroup, error) {
+	if err := c.ensureTokens(); err != nil {
+		return nil, err
+	}
+
+	if strings.TrimSpace(subscriptionID) == "" {
+		return nil, fmt.Errorf("subscription id cannot be empty")
+	}
+
+	reqURL := fmt.Sprintf("%s/subscriptions/%s/resourceGroups?api-version=%s",
+		ARMEndpoint, subscriptionID, ResourceGroupsAPIVersion)
+
+	groups := []ResourceGroup{}
+	for reqURL != "" {
+		resp, err := c.doRequest(http.MethodGet, reqURL, c.armToken, nil)
+		if err != nil {
+			return nil, fmt.Errorf("list resource groups for subscription %s: %w", subscriptionID, err)
+		}
+		var result struct {
+			Value []struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			} `json:"value"`
+			NextLink string `json:"nextLink"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("decode resource groups: %w", err)
+		}
+		resp.Body.Close()
+		for _, item := range result.Value {
+			groups = append(groups, ResourceGroup{
+				SubscriptionID: subscriptionID,
+				Name:           item.Name,
+				ID:             item.ID,
+			})
+		}
+		reqURL = result.NextLink
+	}
+
+	return groups, nil
 }
 
 // GetActiveAssignments fetches all active PIM assignments for the user
@@ -289,18 +454,25 @@ func (c *Client) GetActiveAssignments(principalID string) ([]ActiveAssignment, e
 	return assignments, nil
 }
 
-// IsRoleActive checks if a specific role is currently active
+// IsRoleActive checks if a specific role is currently active at its default scope
 func (c *Client) IsRoleActive(role Role, principalID string) (bool, error) {
+	return c.isRoleActive(role.Scope, role.RoleDefinitionID, principalID)
+}
+
+func (c *Client) isRoleActive(scope, roleDefinitionID, principalID string) (bool, error) {
 	if err := c.ensureTokens(); err != nil {
 		return false, err
 	}
 
-	filter := fmt.Sprintf("principalId eq '%s' and roleDefinitionId eq '%s'", principalID, role.RoleDefinitionID)
+	filter := fmt.Sprintf("principalId eq '%s' and roleDefinitionId eq '%s'", principalID, roleDefinitionID)
 	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/roleAssignmentSchedules?api-version=%s&$filter=%s",
-		ARMEndpoint, role.Scope, APIVersion, url.QueryEscape(filter))
+		ARMEndpoint, scope, APIVersion, url.QueryEscape(filter))
 
 	resp, err := c.doRequest(http.MethodGet, reqURL, c.armToken, nil)
 	if err != nil {
+		if isRecoverableActiveCheckError(err) {
+			return false, nil
+		}
 		return false, fmt.Errorf("check active status: %w", err)
 	}
 	defer resp.Body.Close()
@@ -316,8 +488,19 @@ func (c *Client) IsRoleActive(role Role, principalID string) (bool, error) {
 	return len(result.Value) > 0, nil
 }
 
-// ActivateRole submits a role activation or extension request
-func (c *Client) ActivateRole(role Role, principalID, justification string, hours int) (*ScheduleResponse, error) {
+func isRecoverableActiveCheckError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "http 500") {
+		return true
+	}
+	return false
+}
+
+// ActivateRole submits a role activation or extension request at the specified scope (defaults to role.Scope)
+func (c *Client) ActivateRole(role Role, principalID, justification string, hours int, targetScope string) (*ScheduleResponse, error) {
 	if err := c.ensureTokens(); err != nil {
 		return nil, err
 	}
@@ -325,8 +508,13 @@ func (c *Client) ActivateRole(role Role, principalID, justification string, hour
 	// Validate and clamp hours
 	hours = clampHours(hours)
 
+	scopePath := role.Scope
+	if strings.TrimSpace(targetScope) != "" {
+		scopePath = targetScope
+	}
+
 	// Check if already active to determine request type
-	active, err := c.IsRoleActive(role, principalID)
+	active, err := c.isRoleActive(scopePath, role.RoleDefinitionID, principalID)
 	if err != nil {
 		return nil, err
 	}
@@ -338,10 +526,11 @@ func (c *Client) ActivateRole(role Role, principalID, justification string, hour
 
 	scheduleReq := ScheduleRequest{
 		Properties: ScheduleProperties{
-			PrincipalID:      principalID,
-			RoleDefinitionID: role.RoleDefinitionID,
-			RequestType:      requestType,
-			Justification:    justification,
+			PrincipalID:                     principalID,
+			RoleDefinitionID:                role.RoleDefinitionID,
+			RequestType:                     requestType,
+			Justification:                   justification,
+			LinkedRoleEligibilityScheduleID: role.EligibilityScheduleID,
 			ScheduleInfo: &ScheduleInfo{
 				StartDateTime: time.Now().UTC().Format(time.RFC3339),
 				Expiration: Expiration{
@@ -359,7 +548,7 @@ func (c *Client) ActivateRole(role Role, principalID, justification string, hour
 
 	requestID := uuid.New().String()
 	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/roleAssignmentScheduleRequests/%s?api-version=%s",
-		ARMEndpoint, role.Scope, requestID, APIVersion)
+		ARMEndpoint, scopePath, requestID, APIVersion)
 
 	resp, err := c.doRequest(http.MethodPut, reqURL, c.armToken, bytes.NewReader(body))
 	if err != nil {
