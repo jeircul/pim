@@ -148,16 +148,47 @@ func HandleActivation(ctx context.Context, client *azpim.Client, principalID str
 		}
 	}
 
+	// Determine final scopes for all selected roles before confirming
+	type roleActivation struct {
+		role          azpim.Role
+		targetScope   string
+		targetDisplay string
+	}
+	activations := make([]roleActivation, 0, len(selected))
+
 	for _, role := range selected {
 		targetScope, targetDisplay, err := determineActivationScope(client, role, cfg)
 		if err != nil {
 			return fmt.Errorf("determine target scope for %s @ %s: %w", role.RoleName, role.ScopeDisplay, err)
 		}
-		resp, err := client.ActivateRole(role, principalID, cfg.Justification, cfg.Hours, targetScope)
-		if err != nil {
-			return fmt.Errorf("activate role %s @ %s: %w", role.RoleName, targetDisplay, err)
+		activations = append(activations, roleActivation{
+			role:          role,
+			targetScope:   targetScope,
+			targetDisplay: targetDisplay,
+		})
+	}
+
+	// Show detailed confirmation
+	if !cfg.Yes {
+		summaries := make([]activationSummary, len(activations))
+		for i, act := range activations {
+			summaries[i] = activationSummary{
+				roleName:     act.role.RoleName,
+				scopeDisplay: act.targetDisplay,
+			}
 		}
-		fmt.Printf("✓ Activation submitted for %s @ %s (%d hour(s)) (status: %s)\n", role.RoleName, targetDisplay, cfg.Hours, resp.Properties.Status)
+		if err := PromptConfirmActivationDetailed(summaries, cfg.Justification, formatMinutes(cfg.Minutes)); err != nil {
+			return err
+		}
+	}
+
+	// Execute activations
+	for _, act := range activations {
+		resp, err := client.ActivateRole(act.role, principalID, cfg.Justification, cfg.Minutes, act.targetScope)
+		if err != nil {
+			return fmt.Errorf("activate role %s @ %s: %w", act.role.RoleName, act.targetDisplay, err)
+		}
+		fmt.Printf("✓ Activation submitted for %s @ %s (%s) (status: %s)\n", act.role.RoleName, act.targetDisplay, formatMinutes(cfg.Minutes), resp.Properties.Status)
 	}
 
 	return nil
@@ -422,13 +453,8 @@ func isAuthorizationError(err error) bool {
 func printActivationSummary(cfg ActivateConfig) {
 	fmt.Println("\nActivation overview:")
 	fmt.Printf("  Justification : %s\n", cfg.Justification)
-	fmt.Printf("  Duration      : %d hour(s)\n", cfg.Hours)
+	fmt.Printf("  Duration      : %s\n", formatMinutes(cfg.Minutes))
 	fmt.Printf("  Mode          : %s\n", cfg.ModeLabel())
-	if cfg.AutoScopeEnabled() {
-		fmt.Println("  Auto scope    : enabled (hints will be applied automatically)")
-	} else if cfg.HasTargetHints() {
-		fmt.Println("  Auto scope    : disabled (hints will guide prompts)")
-	}
 	printFilterSummary(cfg)
 	fmt.Println()
 }
@@ -451,4 +477,17 @@ func printFilterGroup(label string, values []string) {
 		return
 	}
 	fmt.Printf("%s: %s\n", label, strings.Join(values, ", "))
+}
+
+// formatMinutes formats minutes as human-readable duration
+func formatMinutes(minutes int) string {
+	hours := minutes / 60
+	mins := minutes % 60
+	if mins == 0 {
+		return fmt.Sprintf("%d hour(s)", hours)
+	}
+	if hours == 0 {
+		return fmt.Sprintf("%d minute(s)", mins)
+	}
+	return fmt.Sprintf("%d hour(s) %d minute(s)", hours, mins)
 }
