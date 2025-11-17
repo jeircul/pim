@@ -4,25 +4,27 @@ import (
 	"testing"
 )
 
-func TestClampHours(t *testing.T) {
+func TestClampMinutes(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    int
 		expected int
 	}{
-		{"Below minimum", 0, MinHours},
-		{"At minimum", 1, 1},
-		{"Normal value", 4, 4},
-		{"At maximum", 8, 8},
-		{"Above maximum", 10, MaxHours},
-		{"Negative value", -5, MinHours},
+		{"Below minimum", 0, MinMinutes},
+		{"At minimum", 30, 30},
+		{"Round down", 40, 30},
+		{"Round up", 50, 60},
+		{"Normal value", 120, 120},
+		{"At maximum", 480, 480},
+		{"Above maximum", 600, MaxMinutes},
+		{"Negative value", -5, MinMinutes},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := clampHours(tt.input)
+			result := clampMinutes(tt.input)
 			if result != tt.expected {
-				t.Errorf("clampHours(%d) = %d; want %d", tt.input, result, tt.expected)
+				t.Errorf("clampMinutes(%d) = %d; want %d", tt.input, result, tt.expected)
 			}
 		})
 	}

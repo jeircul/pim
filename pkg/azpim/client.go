@@ -42,10 +42,10 @@ const (
 	GraphEndpoint = "https://graph.microsoft.com/v1.0"
 	// DefaultTimeout is the default HTTP request timeout
 	DefaultTimeout = 30 * time.Second
-	// MinHours is the minimum activation duration
-	MinHours = 1
-	// MaxHours is the maximum activation duration
-	MaxHours = 8
+	// MinMinutes is the minimum activation duration in minutes
+	MinMinutes = 30
+	// MaxMinutes is the maximum activation duration in minutes
+	MaxMinutes = 480
 )
 
 // NewClient creates a new PIM client using the best available delegated credential.
@@ -500,13 +500,13 @@ func isRecoverableActiveCheckError(err error) bool {
 }
 
 // ActivateRole submits a role activation or extension request at the specified scope (defaults to role.Scope)
-func (c *Client) ActivateRole(role Role, principalID, justification string, hours int, targetScope string) (*ScheduleResponse, error) {
+func (c *Client) ActivateRole(role Role, principalID, justification string, minutes int, targetScope string) (*ScheduleResponse, error) {
 	if err := c.ensureTokens(); err != nil {
 		return nil, err
 	}
 
-	// Validate and clamp hours
-	hours = clampHours(hours)
+	// Validate and clamp minutes
+	minutes = clampMinutes(minutes)
 
 	scopePath := role.Scope
 	if strings.TrimSpace(targetScope) != "" {
@@ -535,7 +535,7 @@ func (c *Client) ActivateRole(role Role, principalID, justification string, hour
 				StartDateTime: time.Now().UTC().Format(time.RFC3339),
 				Expiration: Expiration{
 					Type:     "AfterDuration",
-					Duration: fmt.Sprintf("PT%dH", hours),
+					Duration: formatDuration(minutes),
 				},
 			},
 		},
@@ -601,15 +601,29 @@ func (c *Client) DeactivateRole(assignment ActiveAssignment, principalID string)
 	return &scheduleResp, nil
 }
 
-// clampHours ensures hours is within valid range
-func clampHours(hours int) int {
-	if hours < MinHours {
-		return MinHours
+// clampMinutes ensures minutes is within valid range and rounds to 30-minute increments
+func clampMinutes(minutes int) int {
+	if minutes < MinMinutes {
+		return MinMinutes
 	}
-	if hours > MaxHours {
-		return MaxHours
+	if minutes > MaxMinutes {
+		return MaxMinutes
 	}
-	return hours
+	// Round to nearest 30 minutes
+	return ((minutes + 15) / 30) * 30
+}
+
+// formatDuration converts minutes to ISO 8601 duration format (PT1H30M)
+func formatDuration(minutes int) string {
+	hours := minutes / 60
+	mins := minutes % 60
+	if mins == 0 {
+		return fmt.Sprintf("PT%dH", hours)
+	}
+	if hours == 0 {
+		return fmt.Sprintf("PT%dM", mins)
+	}
+	return fmt.Sprintf("PT%dH%dM", hours, mins)
 }
 
 func allowDeviceLogin() bool {
