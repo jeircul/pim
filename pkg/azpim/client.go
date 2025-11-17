@@ -470,7 +470,7 @@ func (c *Client) isRoleActive(scope, roleDefinitionID, principalID string) (bool
 
 	resp, err := c.doRequest(http.MethodGet, reqURL, c.armToken, nil)
 	if err != nil {
-		if isRecoverableActiveCheckError(err) {
+		if isRetryableError(err) {
 			return false, nil
 		}
 		return false, fmt.Errorf("check active status: %w", err)
@@ -488,15 +488,12 @@ func (c *Client) isRoleActive(scope, roleDefinitionID, principalID string) (bool
 	return len(result.Value) > 0, nil
 }
 
-func isRecoverableActiveCheckError(err error) bool {
+func isRetryableError(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
-	if strings.Contains(msg, "http 500") {
-		return true
-	}
-	return false
+	return strings.Contains(msg, "http 500")
 }
 
 // ActivateRole submits a role activation or extension request at the specified scope (defaults to role.Scope)
