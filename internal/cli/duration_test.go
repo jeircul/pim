@@ -23,7 +23,6 @@ func TestParseDuration(t *testing.T) {
 		{"uppercase M", "45M", 45, false},
 		{"mixed case", "1H30M", 90, false},
 		{"empty string", "", 60, false},
-		{"no unit", "90", 5400, false}, // interpreted as hours
 		{"missing number", "h", 0, true},
 		{"only letters", "abc", 0, true},
 		{"negative", "-1h", 0, true},

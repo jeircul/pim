@@ -331,9 +331,9 @@ func parseDurationPrompt(s string) (int, error) {
 		return 0, fmt.Errorf("duration cannot be empty")
 	}
 
-	// Try as plain number (minutes)
+	// For backward compatibility, interpret plain numbers as hours
 	if val, err := strconv.Atoi(s); err == nil {
-		return val, nil
+		return val * 60, nil
 	}
 
 	// Parse as duration string
