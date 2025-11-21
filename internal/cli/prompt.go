@@ -124,7 +124,7 @@ func PromptMultiSelection[T any](items []T, displayFunc func(int, T) string, key
 		}
 
 		if matches, total := filterViewBySubstring(original, keysLower, lower, 20); total > 0 {
-			current = matches
+			current = promoteExactMatches(matches)
 			fmt.Printf("\nShowing %d of %d match(es) containing %q:\n", len(matches), total, input)
 			printView(current, displayFunc)
 			continue
@@ -143,9 +143,10 @@ func PromptMultiSelection[T any](items []T, displayFunc func(int, T) string, key
 		filtered := make([]viewItem[T], 0, limit)
 		for i := 0; i < limit; i++ {
 			idx := matches[i].OriginalIndex
-			filtered = append(filtered, viewItem[T]{idx: idx, value: items[idx]})
+			exact := strings.EqualFold(keys[idx], input)
+			filtered = append(filtered, viewItem[T]{idx: idx, value: items[idx], exact: exact})
 		}
-		current = filtered
+		current = promoteExactMatches(filtered)
 		fmt.Printf("\nTop %d match(es) for %q:\n", len(current), input)
 		printView(current, displayFunc)
 	}
@@ -169,6 +170,7 @@ func PromptSingleSelection[T any](items []T, displayFunc func(int, T) string, ke
 type viewItem[T any] struct {
 	idx   int
 	value T
+	exact bool
 }
 
 func printView[T any](items []viewItem[T], displayFunc func(int, T) string) {
@@ -182,7 +184,11 @@ func printView[T any](items []viewItem[T], displayFunc func(int, T) string) {
 		limit = maxDisplay
 	}
 	for i := 0; i < limit; i++ {
-		fmt.Println(displayFunc(i+1, items[i].value))
+		line := displayFunc(i+1, items[i].value)
+		if items[i].exact {
+			line += " [exact]"
+		}
+		fmt.Println(line)
 	}
 	if len(items) > limit {
 		fmt.Printf("  ...and %d more. Narrow further or search.\n", len(items)-limit)
@@ -233,11 +239,29 @@ func filterViewBySubstring[T any](all []viewItem[T], lowerKeys []string, needle 
 		if strings.Contains(key, needle) {
 			total++
 			if len(filtered) < limit {
-				filtered = append(filtered, all[i])
+				item := all[i]
+				item.exact = key == needle
+				filtered = append(filtered, item)
 			}
 		}
 	}
 	return filtered, total
+}
+
+func promoteExactMatches[T any](items []viewItem[T]) []viewItem[T] {
+	if len(items) == 0 {
+		return items
+	}
+	exact := make([]viewItem[T], 0, len(items))
+	fuzzy := make([]viewItem[T], 0, len(items))
+	for _, item := range items {
+		if item.exact {
+			exact = append(exact, item)
+			continue
+		}
+		fuzzy = append(fuzzy, item)
+	}
+	return append(exact, fuzzy...)
 }
 
 func min(a, b int) int {

@@ -5,7 +5,7 @@ Small, friendly CLI for activating, deactivating, and inspecting Azure Privilege
 ## ✨ Highlights
 
 - 🔐 Guided menu when you launch `pim` with no arguments
-- 🎯 Fast flag flow for scripts (`pim activate -j "Patch" --sub prod --auto`)
+- 🎯 Fast flag flow for scripts (`pim activate -j "Patch" --sub prod --yes`)
 - 🧭 Scoped activations for management groups, subscriptions, and resource groups
 - 🔁 Quick status and deactivate commands for active elevations
 
@@ -71,3 +71,7 @@ task clean    # remove build artefacts
 ## 🙌 Get Involved
 
 Report issues, share ideas, or follow releases at [github.com/jeircul/pim](https://github.com/jeircul/pim).
+
+## 🛣️ Roadmap
+
+- Saved activation profiles (named bundles that store filters, scopes, and default justifications) to replay common elevation flows faster.

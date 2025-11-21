@@ -27,6 +27,12 @@ type Client struct {
 	ctx        context.Context
 }
 
+type childResource struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
 const (
 	// APIVersion is the Azure PIM API version
 	APIVersion = "2020-10-01"
@@ -270,11 +276,11 @@ func (c *Client) ListManagementGroupSubscriptions(mgID string) ([]Subscription, 
 	return nil, legacyErr
 }
 
-func (c *Client) listEligibleChildSubscriptions(mgID string) ([]Subscription, error) {
+func (c *Client) fetchEligibleChildResources(mgID string) ([]childResource, error) {
 	reqURL := fmt.Sprintf("%s/providers/Microsoft.Management/managementGroups/%s/providers/Microsoft.Authorization/eligibleChildResources?api-version=%s&getAllChildren=true",
 		ARMEndpoint, url.PathEscape(mgID), EligibleChildResourcesAPIVersion)
 
-	subs := []Subscription{}
+	resources := []childResource{}
 	for reqURL != "" {
 		resp, err := c.doRequest(http.MethodGet, reqURL, c.armToken, nil)
 		if err != nil {
@@ -294,22 +300,57 @@ func (c *Client) listEligibleChildSubscriptions(mgID string) ([]Subscription, er
 		}
 		resp.Body.Close()
 		for _, item := range result.Value {
-			if !strings.EqualFold(item.Type, "subscription") {
-				continue
-			}
-			subID := SubscriptionIDFromScope(item.ID)
-			if subID == "" {
-				continue
-			}
-			subs = append(subs, Subscription{
-				ID:          subID,
-				DisplayName: item.Name,
-			})
+			resources = append(resources, childResource{ID: item.ID, Name: item.Name, Type: item.Type})
 		}
 		reqURL = result.NextLink
 	}
 
+	return resources, nil
+}
+
+func (c *Client) listEligibleChildSubscriptions(mgID string) ([]Subscription, error) {
+	resources, err := c.fetchEligibleChildResources(mgID)
+	if err != nil {
+		return nil, err
+	}
+	subs := make([]Subscription, 0, len(resources))
+	for _, item := range resources {
+		if !strings.Contains(strings.ToLower(item.Type), "subscription") {
+			continue
+		}
+		subID := SubscriptionIDFromScope(item.ID)
+		if subID == "" {
+			continue
+		}
+		subs = append(subs, Subscription{
+			ID:          subID,
+			DisplayName: item.Name,
+		})
+	}
 	return subs, nil
+}
+
+func (c *Client) ListManagementGroupResourceGroups(mgID string) ([]ResourceGroup, error) {
+	resources, err := c.fetchEligibleChildResources(mgID)
+	if err != nil {
+		return nil, err
+	}
+	groups := make([]ResourceGroup, 0, len(resources))
+	for _, item := range resources {
+		if !strings.Contains(strings.ToLower(item.Type), "resourcegroup") {
+			continue
+		}
+		subID, name := ResourceGroupNameFromScope(item.ID)
+		if subID == "" || name == "" {
+			continue
+		}
+		groups = append(groups, ResourceGroup{
+			SubscriptionID: subID,
+			Name:           name,
+			ID:             item.ID,
+		})
+	}
+	return groups, nil
 }
 
 func (c *Client) listManagementGroupSubscriptionsLegacy(mgID string) ([]Subscription, error) {

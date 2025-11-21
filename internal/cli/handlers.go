@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -53,6 +54,13 @@ func filterTemporary(assignments []azpim.ActiveAssignment) []azpim.ActiveAssignm
 	}
 	return filtered
 }
+
+type activationTarget struct {
+	scope   string
+	display string
+}
+
+var errMultipleResourceGroups = errors.New("multiple resource groups match filters")
 
 // HandleStatus shows active assignments with expiry times
 func HandleStatus(ctx context.Context, client *azpim.Client, principalID string) error {
@@ -150,22 +158,19 @@ func HandleActivation(ctx context.Context, client *azpim.Client, principalID str
 
 	// Determine final scopes for all selected roles before confirming
 	type roleActivation struct {
-		role          azpim.Role
-		targetScope   string
-		targetDisplay string
+		role   azpim.Role
+		target activationTarget
 	}
 	activations := make([]roleActivation, 0, len(selected))
 
 	for _, role := range selected {
-		targetScope, targetDisplay, err := determineActivationScope(client, role, cfg)
+		targets, err := determineActivationTargets(client, role, cfg)
 		if err != nil {
 			return fmt.Errorf("determine target scope for %s @ %s: %w", role.RoleName, role.ScopeDisplay, err)
 		}
-		activations = append(activations, roleActivation{
-			role:          role,
-			targetScope:   targetScope,
-			targetDisplay: targetDisplay,
-		})
+		for _, target := range targets {
+			activations = append(activations, roleActivation{role: role, target: target})
+		}
 	}
 
 	// Show detailed confirmation
@@ -174,7 +179,7 @@ func HandleActivation(ctx context.Context, client *azpim.Client, principalID str
 		for i, act := range activations {
 			summaries[i] = activationSummary{
 				roleName:     act.role.RoleName,
-				scopeDisplay: act.targetDisplay,
+				scopeDisplay: act.target.display,
 			}
 		}
 		if err := PromptConfirmActivationDetailed(summaries, cfg.Justification, formatMinutes(cfg.Minutes)); err != nil {
@@ -184,121 +189,132 @@ func HandleActivation(ctx context.Context, client *azpim.Client, principalID str
 
 	// Execute activations
 	for _, act := range activations {
-		resp, err := client.ActivateRole(act.role, principalID, cfg.Justification, cfg.Minutes, act.targetScope)
+		resp, err := client.ActivateRole(act.role, principalID, cfg.Justification, cfg.Minutes, act.target.scope)
 		if err != nil {
-			return fmt.Errorf("activate role %s @ %s: %w", act.role.RoleName, act.targetDisplay, err)
+			return fmt.Errorf("activate role %s @ %s: %w", act.role.RoleName, act.target.display, err)
 		}
-		fmt.Printf("✓ Activation submitted for %s @ %s (%s) (status: %s)\n", act.role.RoleName, act.targetDisplay, formatMinutes(cfg.Minutes), resp.Properties.Status)
+		fmt.Printf("✓ Activation submitted for %s @ %s (%s) (status: %s)\n", act.role.RoleName, act.target.display, formatMinutes(cfg.Minutes), resp.Properties.Status)
 	}
 
 	return nil
 }
 
-func determineActivationScope(client *azpim.Client, role azpim.Role, cfg ActivateConfig) (string, string, error) {
-	defaultScope := role.Scope
-	defaultDisplay := role.ScopeDisplay
+func determineActivationTargets(client *azpim.Client, role azpim.Role, cfg ActivateConfig) ([]activationTarget, error) {
+	defaultTarget := activationTarget{scope: role.Scope, display: role.ScopeDisplay}
 
 	if !azpim.IsManagementGroupScope(role.Scope) {
-		return defaultScope, defaultDisplay, nil
+		return []activationTarget{defaultTarget}, nil
 	}
 
 	mgID := azpim.ManagementGroupIDFromScope(role.Scope)
 	if mgID == "" {
-		return defaultScope, defaultDisplay, nil
+		return []activationTarget{defaultTarget}, nil
 	}
 
 	subs, err := client.ListManagementGroupSubscriptions(mgID)
 	if err != nil {
 		if isAuthorizationError(err) {
 			fmt.Printf("⚠️  Unable to list subscriptions for %s (missing management group read permission). Activating entire management group.\n", role.ScopeDisplay)
-			return defaultScope, defaultDisplay, nil
+			return []activationTarget{defaultTarget}, nil
 		}
-		return "", "", fmt.Errorf("list subscriptions for %s: %w", role.ScopeDisplay, err)
+		return nil, fmt.Errorf("list subscriptions for %s: %w", role.ScopeDisplay, err)
 	}
 
 	if len(subs) == 0 {
-		return defaultScope, defaultDisplay, nil
+		return []activationTarget{defaultTarget}, nil
 	}
 
-	// Attempt headless selection using provided hints
 	if cfg.HasTargetHints() {
-		targetScope, targetDisplay, ok, err := autoSelectManagementGroupScope(client, role, subs, cfg)
+		if len(cfg.Subscriptions) > 0 && len(cfg.ResourceGroups) > 0 {
+			targets, err := promptResourceGroupsForHints(client, mgID, subs, cfg)
+			if err != nil {
+				return nil, err
+			}
+			if len(targets) > 0 {
+				return targets, nil
+			}
+		}
+		target, ok, err := autoSelectManagementGroupScope(client, role, subs, cfg)
 		if err != nil {
-			return "", "", err
+			return nil, err
 		}
 		if ok {
-			return targetScope, targetDisplay, nil
+			return []activationTarget{target}, nil
 		}
 	}
 
-	return promptManagementGroupScope(client, role, subs, cfg)
+	return promptManagementGroupTargets(client, mgID, role, subs, cfg)
 }
 
-func autoSelectManagementGroupScope(client *azpim.Client, role azpim.Role, subs []azpim.Subscription, cfg ActivateConfig) (string, string, bool, error) {
+func autoSelectManagementGroupScope(client *azpim.Client, role azpim.Role, subs []azpim.Subscription, cfg ActivateConfig) (activationTarget, bool, error) {
+	var zero activationTarget
 	if len(cfg.Subscriptions) == 0 {
-		return "", "", false, nil
+		return zero, false, nil
 	}
 
 	matches := findSubscriptionsByTokens(subs, cfg.Subscriptions)
 	if len(matches) == 0 {
-		return "", "", false, nil
+		return zero, false, nil
 	}
 	if len(matches) > 1 {
-		// ambiguous, fall back to interactive selection
 		fmt.Printf("⚠️  Multiple subscriptions match filters (%d). You'll be prompted to choose.\n", len(matches))
-		return "", "", false, nil
+		return zero, false, nil
 	}
 
 	chosen := matches[0]
-	// If resource-group hints provided, attempt to resolve further
 	if len(cfg.ResourceGroups) > 0 {
-		rgScope, rgDisplay, ok, err := autoSelectResourceGroup(client, chosen, cfg.ResourceGroups)
+		target, ok, err := autoSelectResourceGroup(client, chosen, cfg.ResourceGroups)
 		if err != nil {
-			return "", "", false, err
+			if errors.Is(err, errMultipleResourceGroups) {
+				return zero, false, nil
+			}
+			return zero, false, err
 		}
 		if ok {
-			fmt.Printf("🔧 Targeting resource group %s within %s\n", rgDisplay, role.ScopeDisplay)
-			return rgScope, rgDisplay, true, nil
+			fmt.Printf("🔧 Targeting resource group %s within %s\n", target.display, role.ScopeDisplay)
+			return target, true, nil
 		}
+		return zero, false, nil
 	}
 
 	fmt.Printf("🔧 Targeting subscription %s (%s) under %s\n", chosen.DisplayName, chosen.ID, role.ScopeDisplay)
-	return chosen.Scope(), chosen.DisplayName, true, nil
+	return activationTarget{scope: chosen.Scope(), display: chosen.DisplayName}, true, nil
 }
 
-func autoSelectResourceGroup(client *azpim.Client, subscription azpim.Subscription, hints []string) (string, string, bool, error) {
+func autoSelectResourceGroup(client *azpim.Client, subscription azpim.Subscription, hints []string) (activationTarget, bool, error) {
+	var zero activationTarget
 	if len(hints) == 0 {
-		return "", "", false, nil
+		return zero, false, nil
 	}
 
 	groups, err := client.ListSubscriptionResourceGroups(subscription.ID)
 	if err != nil {
 		if isAuthorizationError(err) {
 			fmt.Printf("⚠️  Unable to list resource groups for %s (insufficient permission). Activating entire subscription scope.\n", subscription.DisplayName)
-			return subscription.Scope(), subscription.DisplayName, true, nil
+			return activationTarget{scope: subscription.Scope(), display: subscription.DisplayName}, true, nil
 		}
-		return "", "", false, fmt.Errorf("list resource groups for %s: %w", subscription.DisplayName, err)
+		return zero, false, fmt.Errorf("list resource groups for %s: %w", subscription.DisplayName, err)
 	}
 
 	matches := findResourceGroupsByTokens(groups, hints)
 	if len(matches) == 0 {
-		return "", "", false, nil
+		return zero, false, nil
 	}
 	if len(matches) > 1 {
 		fmt.Printf("⚠️  Multiple resource groups match filters (%d). You'll be prompted to choose.\n", len(matches))
-		return "", "", false, nil
+		return zero, false, errMultipleResourceGroups
 	}
 
 	chosen := matches[0]
 	label := fmt.Sprintf("%s/%s", subscription.DisplayName, chosen.Name)
-	return chosen.Scope(), label, true, nil
+	return activationTarget{scope: chosen.Scope(), display: label}, true, nil
 }
 
-func promptManagementGroupScope(client *azpim.Client, role azpim.Role, subs []azpim.Subscription, cfg ActivateConfig) (string, string, error) {
+func promptManagementGroupTargets(client *azpim.Client, mgID string, role azpim.Role, subs []azpim.Subscription, cfg ActivateConfig) ([]activationTarget, error) {
 	options := []scopeOption{
 		{Label: fmt.Sprintf("Activate entire management group (%s)", role.ScopeDisplay), Kind: scopeOptionManagementGroup},
-		{Label: "Scope to a subscription", Kind: scopeOptionSubscription},
-		{Label: "Scope to a resource group", Kind: scopeOptionResourceGroup},
+		{Label: "Scope to subscription(s)", Kind: scopeOptionSubscription},
+		{Label: "Scope to resource group(s)", Kind: scopeOptionResourceGroup},
 	}
 
 	choice, err := PromptSelection(options,
@@ -307,34 +323,55 @@ func promptManagementGroupScope(client *azpim.Client, role azpim.Role, subs []az
 		},
 		"Choose scope option")
 	if err != nil {
-		return "", "", fmt.Errorf("scope option: %w", err)
+		return nil, fmt.Errorf("scope option: %w", err)
 	}
 
 	switch choice.Kind {
 	case scopeOptionManagementGroup:
-		return role.Scope, role.ScopeDisplay, nil
+		return []activationTarget{{scope: role.Scope, display: role.ScopeDisplay}}, nil
 	case scopeOptionSubscription:
-		selectedSub, err := promptSubscription(subs, cfg)
+		selectedSubs, err := promptSubscriptions(subs, cfg)
 		if err != nil {
-			return "", "", err
+			return nil, err
 		}
-		return selectedSub.Scope(), selectedSub.DisplayName, nil
+		targets := make([]activationTarget, 0, len(selectedSubs))
+		for _, sub := range selectedSubs {
+			targets = append(targets, activationTarget{scope: sub.Scope(), display: sub.DisplayName})
+		}
+		return targets, nil
 	case scopeOptionResourceGroup:
-		selectedSub, err := promptSubscription(subs, cfg)
-		if err != nil {
-			return "", "", err
-		}
-		scope, label, err := promptResourceGroup(client, selectedSub, cfg)
-		if err != nil {
-			return "", "", err
-		}
-		return scope, label, nil
+		return promptResourceGroupsForHints(client, mgID, subs, cfg)
 	default:
-		return role.Scope, role.ScopeDisplay, nil
+		return []activationTarget{{scope: role.Scope, display: role.ScopeDisplay}}, nil
 	}
 }
 
-func promptSubscription(subs []azpim.Subscription, cfg ActivateConfig) (azpim.Subscription, error) {
+func promptResourceGroupsForHints(client *azpim.Client, mgID string, subs []azpim.Subscription, cfg ActivateConfig) ([]activationTarget, error) {
+	if len(cfg.ResourceGroups) == 0 {
+		return nil, nil
+	}
+	selectedSubs := subs
+	if len(cfg.Subscriptions) > 0 {
+		selected := findSubscriptionsByTokens(subs, cfg.Subscriptions)
+		if len(selected) > 0 {
+			selectedSubs = selected
+		}
+	}
+	var targets []activationTarget
+	for idx, sub := range selectedSubs {
+		if idx > 0 {
+			fmt.Println()
+		}
+		subTargets, err := promptResourceGroups(client, mgID, sub, cfg)
+		if err != nil {
+			return nil, err
+		}
+		targets = append(targets, subTargets...)
+	}
+	return targets, nil
+}
+
+func promptSubscriptions(subs []azpim.Subscription, cfg ActivateConfig) ([]azpim.Subscription, error) {
 	display := func(i int, s azpim.Subscription) string {
 		return fmt.Sprintf("  %2d) %s (%s)", i, s.DisplayName, s.ID)
 	}
@@ -346,26 +383,48 @@ func promptSubscription(subs []azpim.Subscription, cfg ActivateConfig) (azpim.Su
 		fmt.Printf("Filters hint at subscriptions matching %s\n", strings.Join(cfg.Subscriptions, ", "))
 	}
 
-	return PromptSingleSelection(subs, display, key, "Select subscription scope")
+	return PromptMultiSelection(subs, display, key, "Select subscription scope(s)")
 }
 
-func promptResourceGroup(client *azpim.Client, subscription azpim.Subscription, cfg ActivateConfig) (string, string, error) {
+func promptResourceGroups(client *azpim.Client, mgID string, subscription azpim.Subscription, cfg ActivateConfig) ([]activationTarget, error) {
 	fmt.Printf("\nFetching resource groups for %s (%s)...\n", subscription.DisplayName, subscription.ID)
 	groups, err := client.ListSubscriptionResourceGroups(subscription.ID)
 	if err != nil {
 		if isAuthorizationError(err) {
 			fmt.Printf("⚠️  Unable to list resource groups for %s (insufficient permission). Activating entire subscription scope instead.\n", subscription.DisplayName)
-			return subscription.Scope(), subscription.DisplayName, nil
+			return []activationTarget{{scope: subscription.Scope(), display: subscription.DisplayName}}, nil
 		}
-		return "", "", err
+		return nil, err
 	}
 
-	if len(groups) == 0 {
-		return subscription.Scope(), subscription.DisplayName, nil
+	if len(groups) == 0 && mgID != "" {
+		mgGroups, mgErr := client.ListManagementGroupResourceGroups(mgID)
+		if mgErr == nil {
+			groups = filterResourceGroupsForSubscription(mgGroups, subscription.ID)
+		}
 	}
 
+	view := groups
 	if len(cfg.ResourceGroups) > 0 {
 		fmt.Printf("Filters hint at resource groups matching %s\n", strings.Join(cfg.ResourceGroups, ", "))
+		matching := findResourceGroupsByTokens(groups, cfg.ResourceGroups)
+		if len(matching) > 0 {
+			view = matching
+			fmt.Printf("Showing %d resource group(s) matching filters.\n", len(view))
+		} else if len(groups) == 0 {
+			synthetic := resourceGroupsFromHints(subscription, cfg.ResourceGroups)
+			if len(synthetic) > 0 {
+				fmt.Printf("⚠️  Azure API returned no resource groups; using provided filters.\n")
+				view = synthetic
+			}
+		} else {
+			fmt.Printf("⚠️  No resource groups matched filters (%s). Showing all available groups.\n", strings.Join(cfg.ResourceGroups, ", "))
+		}
+	}
+
+	if len(view) == 0 {
+		fmt.Printf("⚠️  No resource groups available under %s. Activating entire subscription scope.\n", subscription.DisplayName)
+		return []activationTarget{{scope: subscription.Scope(), display: subscription.DisplayName}}, nil
 	}
 
 	display := func(i int, rg azpim.ResourceGroup) string {
@@ -375,13 +434,55 @@ func promptResourceGroup(client *azpim.Client, subscription azpim.Subscription, 
 		return fmt.Sprintf("%s %s", rg.Name, rg.ID)
 	}
 
-	chosen, err := PromptSingleSelection(groups, display, key, fmt.Sprintf("Select resource group within %s", subscription.DisplayName))
+	chosen, err := PromptMultiSelection(view, display, key, fmt.Sprintf("Select resource group(s) within %s", subscription.DisplayName))
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
 
-	label := fmt.Sprintf("%s/%s", subscription.DisplayName, chosen.Name)
-	return chosen.Scope(), label, nil
+	targets := make([]activationTarget, 0, len(chosen))
+	for _, rg := range chosen {
+		label := fmt.Sprintf("%s/%s", subscription.DisplayName, rg.Name)
+		targets = append(targets, activationTarget{scope: rg.Scope(), display: label})
+	}
+	return targets, nil
+}
+
+func resourceGroupsFromHints(subscription azpim.Subscription, hints []string) []azpim.ResourceGroup {
+	if len(hints) == 0 {
+		return nil
+	}
+	groups := make([]azpim.ResourceGroup, 0, len(hints))
+	seen := make(map[string]struct{}, len(hints))
+	for _, hint := range hints {
+		name := strings.TrimSpace(hint)
+		if name == "" {
+			continue
+		}
+		key := strings.ToLower(name)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		groups = append(groups, azpim.ResourceGroup{
+			SubscriptionID: subscription.ID,
+			Name:           name,
+			ID:             fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscription.ID, name),
+		})
+	}
+	return groups
+}
+
+func filterResourceGroupsForSubscription(groups []azpim.ResourceGroup, subscriptionID string) []azpim.ResourceGroup {
+	if len(groups) == 0 {
+		return nil
+	}
+	filtered := make([]azpim.ResourceGroup, 0, len(groups))
+	for _, group := range groups {
+		if strings.EqualFold(group.SubscriptionID, subscriptionID) {
+			filtered = append(filtered, group)
+		}
+	}
+	return filtered
 }
 
 func findSubscriptionsByTokens(subs []azpim.Subscription, tokens []string) []azpim.Subscription {
