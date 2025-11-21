@@ -54,12 +54,12 @@ func promptActivateInteractively() (ActivateConfig, error) {
 		return ActivateConfig{}, err
 	}
 
-	hours, err := PromptHours(azpim.MinHours)
+	minutes, err := PromptDuration(azpim.MinMinutes)
 	if err != nil {
 		return ActivateConfig{}, err
 	}
 
-	cfg := ActivateConfig{Justification: justification, Hours: hours}
+	cfg := ActivateConfig{Justification: justification, Minutes: minutes}
 
 	addFilters, err := PromptYesNo("Add filters (management group, subscription, etc.)?", false)
 	if err != nil {
@@ -81,13 +81,6 @@ func promptActivateInteractively() (ActivateConfig, error) {
 		}
 		if cfg.ScopeContains, err = PromptCSV("Scope contains filter(s)", nil); err != nil {
 			return ActivateConfig{}, err
-		}
-		if cfg.HasTargetHints() {
-			applyAuto, autoErr := PromptYesNo("Automatically apply these hints without extra prompts?", false)
-			if autoErr != nil {
-				return ActivateConfig{}, autoErr
-			}
-			cfg.Auto = applyAuto
 		}
 	}
 

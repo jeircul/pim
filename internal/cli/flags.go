@@ -33,13 +33,13 @@ type Command struct {
 // ActivateConfig holds activation-specific settings.
 type ActivateConfig struct {
 	Justification    string
-	Hours            int
+	Minutes          int
 	ManagementGroups []string
 	Subscriptions    []string
 	ScopeContains    []string
 	Roles            []string
 	ResourceGroups   []string
-	Auto             bool
+	Yes              bool
 }
 
 // ParseArgs parses os.Args[1:] style arguments into a Command.
@@ -67,15 +67,17 @@ func ParseArgs(args []string) (Command, error) {
 func parseActivate(args []string) (Command, error) {
 	var cfg ActivateConfig
 	var mgFilters, subFilters, scopeFilters, roleFilters, rgFilters stringSliceFlag
+	var durationStr string
 
 	fs := flag.NewFlagSet("activate", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 
 	fs.StringVar(&cfg.Justification, "j", "", "")
 	fs.StringVar(&cfg.Justification, "justification", "", "")
-	fs.IntVar(&cfg.Hours, "t", 1, "")
-	fs.IntVar(&cfg.Hours, "time", 1, "")
-	fs.BoolVar(&cfg.Auto, "auto", false, "")
+	fs.StringVar(&durationStr, "t", "1h", "")
+	fs.StringVar(&durationStr, "time", "1h", "")
+	fs.BoolVar(&cfg.Yes, "yes", false, "")
+	fs.BoolVar(&cfg.Yes, "y", false, "")
 	fs.Var(&mgFilters, "management-group", "")
 	fs.Var(&mgFilters, "mg", "")
 	fs.Var(&subFilters, "subscription", "")
@@ -93,6 +95,13 @@ func parseActivate(args []string) (Command, error) {
 		return Command{}, err
 	}
 
+	// Parse duration string
+	minutes, err := parseDuration(durationStr)
+	if err != nil {
+		return Command{}, fmt.Errorf("invalid duration: %w", err)
+	}
+	cfg.Minutes = minutes
+
 	cfg.ManagementGroups = mgFilters.Slice()
 	cfg.Subscriptions = subFilters.Slice()
 	cfg.ScopeContains = scopeFilters.Slice()
@@ -108,16 +117,19 @@ func parseActivate(args []string) (Command, error) {
 
 // Validate ensures activation inputs are consistent.
 func (c ActivateConfig) Validate() error {
-	if c.Hours < azpim.MinHours || c.Hours > azpim.MaxHours {
-		return fmt.Errorf("hours must be between %d and %d", azpim.MinHours, azpim.MaxHours)
+	if c.Minutes < azpim.MinMinutes || c.Minutes > azpim.MaxMinutes {
+		return fmt.Errorf("duration must be between %d and %d minutes", azpim.MinMinutes, azpim.MaxMinutes)
+	}
+	if c.Minutes%30 != 0 {
+		return fmt.Errorf("duration must be in 30-minute increments")
 	}
 	return nil
 }
 
 // EnsureDefaults fills in sensible defaults when flags omit optional values.
 func (c *ActivateConfig) EnsureDefaults() {
-	if c.Hours == 0 {
-		c.Hours = azpim.MinHours
+	if c.Minutes == 0 {
+		c.Minutes = azpim.MinMinutes
 	}
 }
 
@@ -136,16 +148,8 @@ func (c ActivateConfig) HasTargetHints() bool {
 	return len(c.Subscriptions) > 0 || len(c.ScopeContains) > 0 || len(c.ResourceGroups) > 0
 }
 
-// AutoScopeEnabled signals whether hints should be applied without prompting.
-func (c ActivateConfig) AutoScopeEnabled() bool {
-	return c.Auto && c.HasTargetHints()
-}
-
 // ModeLabel returns a quick description of the activation mode.
 func (c ActivateConfig) ModeLabel() string {
-	if c.AutoScopeEnabled() {
-		return "auto (apply hints without prompts)"
-	}
 	return "interactive (guided prompts)"
 }
 
@@ -175,19 +179,23 @@ func printActivateHelp() {
 	fmt.Fprintf(os.Stderr, "Required:\n")
 	fmt.Fprintf(os.Stderr, "  -j, --justification   Reason for the activation (prompted if omitted)\n\n")
 	fmt.Fprintf(os.Stderr, "Optional:\n")
-	fmt.Fprintf(os.Stderr, "  -t, --time            Hours (1-8, default 1)\n")
+	fmt.Fprintf(os.Stderr, "  -t, --time            Duration (default '1h')\n")
+	fmt.Fprintf(os.Stderr, "                        Formats: '1h', '90m', '1.5h', '1h30m', '3' (hours)\n")
+	fmt.Fprintf(os.Stderr, "                        Range: 30m to 8h in 30-minute increments\n")
+	fmt.Fprintf(os.Stderr, "  -y, --yes             Skip confirmation prompt (for automation)\n")
 	fmt.Fprintf(os.Stderr, "      --mg              Filter roles by management group (repeatable)\n")
 	fmt.Fprintf(os.Stderr, "      --sub             Filter roles by subscription (repeatable)\n")
 	fmt.Fprintf(os.Stderr, "      --rg              Target resource group hints (repeatable)\n")
 	fmt.Fprintf(os.Stderr, "      --role            Filter roles by name (repeatable)\n")
-	fmt.Fprintf(os.Stderr, "      --scope           Advanced scope substring filter (repeatable)\n")
-	fmt.Fprintf(os.Stderr, "      --auto            Apply hints automatically without extra prompts\n\n")
+	fmt.Fprintf(os.Stderr, "      --scope           Advanced scope substring filter (repeatable)\n\n")
 	fmt.Fprintf(os.Stderr, "Examples:\n")
 	fmt.Fprintf(os.Stderr, "  pim activate -j \"Cleanup\" --mg Omnia-Temp-Dev\n")
-	fmt.Fprintf(os.Stderr, "  pim activate -j \"Emergency fix\" --sub Q901-Platform-Dev --auto\n")
+	fmt.Fprintf(os.Stderr, "  pim activate -j \"Emergency fix\" --sub Q901-Platform-Dev\n")
+	fmt.Fprintf(os.Stderr, "  pim activate -j \"Quick task\" -t 30m --yes\n")
+	fmt.Fprintf(os.Stderr, "  pim activate -j \"Extended work\" -t 2h30m --role Owner\n")
 	fmt.Fprintf(os.Stderr, "\nTips:\n")
 	fmt.Fprintf(os.Stderr, "  - Run 'pim' with no arguments for a guided menu\n")
-	fmt.Fprintf(os.Stderr, "  - Combine flags with --auto to skip interactive scope prompts\n")
+	fmt.Fprintf(os.Stderr, "  - Scope hints (--sub, --rg) auto-drill when specific enough\n")
 }
 
 type stringSliceFlag []string
@@ -206,4 +214,84 @@ func (s *stringSliceFlag) Set(value string) error {
 
 func (s stringSliceFlag) Slice() []string {
 	return append([]string(nil), s...)
+}
+
+// parseDuration parses duration strings like "1h", "90m", "1.5h", "1h30m"
+func parseDuration(s string) (int, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 60, nil // default 1 hour
+	}
+
+	// Check if it contains 'h' or 'm' suffix
+	hasUnit := strings.ContainsAny(strings.ToLower(s), "hm")
+
+	// If no unit and it's a plain number, interpret as hours for backward compatibility
+	if !hasUnit {
+		if val := parseAsNumber(s); val > 0 {
+			return val * 60, nil
+		}
+		return 0, fmt.Errorf("invalid duration format")
+	}
+
+	// Parse compound duration like "1h30m" or "2.5h" or "90m"
+	totalMinutes := 0
+	current := ""
+
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if ch >= '0' && ch <= '9' || ch == '.' {
+			current += string(ch)
+		} else if ch == 'h' || ch == 'H' {
+			if current == "" {
+				return 0, fmt.Errorf("missing number before 'h'")
+			}
+			val, err := parseFloat(current)
+			if err != nil {
+				return 0, fmt.Errorf("invalid hours value: %w", err)
+			}
+			totalMinutes += int(val * 60)
+			current = ""
+		} else if ch == 'm' || ch == 'M' {
+			if current == "" {
+				return 0, fmt.Errorf("missing number before 'm'")
+			}
+			val, err := parseFloat(current)
+			if err != nil {
+				return 0, fmt.Errorf("invalid minutes value: %w", err)
+			}
+			totalMinutes += int(val)
+			current = ""
+		} else if ch == ' ' {
+			continue
+		} else {
+			return 0, fmt.Errorf("invalid character '%c' in duration", ch)
+		}
+	}
+
+	if current != "" {
+		return 0, fmt.Errorf("duration must end with 'h' or 'm'")
+	}
+
+	if totalMinutes <= 0 {
+		return 0, fmt.Errorf("duration must be positive")
+	}
+
+	return totalMinutes, nil
+}
+
+func parseAsNumber(s string) int {
+	var val int
+	if _, err := fmt.Sscanf(s, "%d", &val); err == nil {
+		return val
+	}
+	return 0
+}
+
+func parseFloat(s string) (float64, error) {
+	var val float64
+	if _, err := fmt.Sscanf(s, "%f", &val); err != nil {
+		return 0, err
+	}
+	return val, nil
 }

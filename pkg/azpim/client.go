@@ -27,6 +27,12 @@ type Client struct {
 	ctx        context.Context
 }
 
+type childResource struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
 const (
 	// APIVersion is the Azure PIM API version
 	APIVersion = "2020-10-01"
@@ -42,10 +48,10 @@ const (
 	GraphEndpoint = "https://graph.microsoft.com/v1.0"
 	// DefaultTimeout is the default HTTP request timeout
 	DefaultTimeout = 30 * time.Second
-	// MinHours is the minimum activation duration
-	MinHours = 1
-	// MaxHours is the maximum activation duration
-	MaxHours = 8
+	// MinMinutes is the minimum activation duration in minutes
+	MinMinutes = 30
+	// MaxMinutes is the maximum activation duration in minutes
+	MaxMinutes = 480
 )
 
 // NewClient creates a new PIM client using the best available delegated credential.
@@ -270,11 +276,11 @@ func (c *Client) ListManagementGroupSubscriptions(mgID string) ([]Subscription, 
 	return nil, legacyErr
 }
 
-func (c *Client) listEligibleChildSubscriptions(mgID string) ([]Subscription, error) {
+func (c *Client) fetchEligibleChildResources(mgID string) ([]childResource, error) {
 	reqURL := fmt.Sprintf("%s/providers/Microsoft.Management/managementGroups/%s/providers/Microsoft.Authorization/eligibleChildResources?api-version=%s&getAllChildren=true",
 		ARMEndpoint, url.PathEscape(mgID), EligibleChildResourcesAPIVersion)
 
-	subs := []Subscription{}
+	resources := []childResource{}
 	for reqURL != "" {
 		resp, err := c.doRequest(http.MethodGet, reqURL, c.armToken, nil)
 		if err != nil {
@@ -294,22 +300,57 @@ func (c *Client) listEligibleChildSubscriptions(mgID string) ([]Subscription, er
 		}
 		resp.Body.Close()
 		for _, item := range result.Value {
-			if !strings.EqualFold(item.Type, "subscription") {
-				continue
-			}
-			subID := SubscriptionIDFromScope(item.ID)
-			if subID == "" {
-				continue
-			}
-			subs = append(subs, Subscription{
-				ID:          subID,
-				DisplayName: item.Name,
-			})
+			resources = append(resources, childResource{ID: item.ID, Name: item.Name, Type: item.Type})
 		}
 		reqURL = result.NextLink
 	}
 
+	return resources, nil
+}
+
+func (c *Client) listEligibleChildSubscriptions(mgID string) ([]Subscription, error) {
+	resources, err := c.fetchEligibleChildResources(mgID)
+	if err != nil {
+		return nil, err
+	}
+	subs := make([]Subscription, 0, len(resources))
+	for _, item := range resources {
+		if !strings.Contains(strings.ToLower(item.Type), "subscription") {
+			continue
+		}
+		subID := SubscriptionIDFromScope(item.ID)
+		if subID == "" {
+			continue
+		}
+		subs = append(subs, Subscription{
+			ID:          subID,
+			DisplayName: item.Name,
+		})
+	}
 	return subs, nil
+}
+
+func (c *Client) ListManagementGroupResourceGroups(mgID string) ([]ResourceGroup, error) {
+	resources, err := c.fetchEligibleChildResources(mgID)
+	if err != nil {
+		return nil, err
+	}
+	groups := make([]ResourceGroup, 0, len(resources))
+	for _, item := range resources {
+		if !strings.Contains(strings.ToLower(item.Type), "resourcegroup") {
+			continue
+		}
+		subID, name := ResourceGroupNameFromScope(item.ID)
+		if subID == "" || name == "" {
+			continue
+		}
+		groups = append(groups, ResourceGroup{
+			SubscriptionID: subID,
+			Name:           name,
+			ID:             item.ID,
+		})
+	}
+	return groups, nil
 }
 
 func (c *Client) listManagementGroupSubscriptionsLegacy(mgID string) ([]Subscription, error) {
@@ -470,7 +511,7 @@ func (c *Client) isRoleActive(scope, roleDefinitionID, principalID string) (bool
 
 	resp, err := c.doRequest(http.MethodGet, reqURL, c.armToken, nil)
 	if err != nil {
-		if isRecoverableActiveCheckError(err) {
+		if isRetryableError(err) {
 			return false, nil
 		}
 		return false, fmt.Errorf("check active status: %w", err)
@@ -488,25 +529,22 @@ func (c *Client) isRoleActive(scope, roleDefinitionID, principalID string) (bool
 	return len(result.Value) > 0, nil
 }
 
-func isRecoverableActiveCheckError(err error) bool {
+func isRetryableError(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
-	if strings.Contains(msg, "http 500") {
-		return true
-	}
-	return false
+	return strings.Contains(msg, "http 500")
 }
 
 // ActivateRole submits a role activation or extension request at the specified scope (defaults to role.Scope)
-func (c *Client) ActivateRole(role Role, principalID, justification string, hours int, targetScope string) (*ScheduleResponse, error) {
+func (c *Client) ActivateRole(role Role, principalID, justification string, minutes int, targetScope string) (*ScheduleResponse, error) {
 	if err := c.ensureTokens(); err != nil {
 		return nil, err
 	}
 
-	// Validate and clamp hours
-	hours = clampHours(hours)
+	// Validate and clamp minutes
+	minutes = clampMinutes(minutes)
 
 	scopePath := role.Scope
 	if strings.TrimSpace(targetScope) != "" {
@@ -535,7 +573,7 @@ func (c *Client) ActivateRole(role Role, principalID, justification string, hour
 				StartDateTime: time.Now().UTC().Format(time.RFC3339),
 				Expiration: Expiration{
 					Type:     "AfterDuration",
-					Duration: fmt.Sprintf("PT%dH", hours),
+					Duration: formatDuration(minutes),
 				},
 			},
 		},
@@ -601,15 +639,29 @@ func (c *Client) DeactivateRole(assignment ActiveAssignment, principalID string)
 	return &scheduleResp, nil
 }
 
-// clampHours ensures hours is within valid range
-func clampHours(hours int) int {
-	if hours < MinHours {
-		return MinHours
+// clampMinutes ensures minutes is within valid range and rounds to 30-minute increments
+func clampMinutes(minutes int) int {
+	if minutes < MinMinutes {
+		return MinMinutes
 	}
-	if hours > MaxHours {
-		return MaxHours
+	if minutes > MaxMinutes {
+		return MaxMinutes
 	}
-	return hours
+	// Round to nearest 30 minutes
+	return ((minutes + 15) / 30) * 30
+}
+
+// formatDuration converts minutes to ISO 8601 duration format (PT1H30M)
+func formatDuration(minutes int) string {
+	hours := minutes / 60
+	mins := minutes % 60
+	if mins == 0 {
+		return fmt.Sprintf("PT%dH", hours)
+	}
+	if hours == 0 {
+		return fmt.Sprintf("PT%dM", mins)
+	}
+	return fmt.Sprintf("PT%dH%dM", hours, mins)
 }
 
 func allowDeviceLogin() bool {

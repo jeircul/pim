@@ -5,7 +5,7 @@ Small, friendly CLI for activating, deactivating, and inspecting Azure Privilege
 ## ✨ Highlights
 
 - 🔐 Guided menu when you launch `pim` with no arguments
-- 🎯 Fast flag flow for scripts (`pim activate -j "Patch" --sub prod --auto`)
+- 🎯 Fast flag flow for scripts (`pim activate -j "Patch" --sub prod --yes`)
 - 🧭 Scoped activations for management groups, subscriptions, and resource groups
 - 🔁 Quick status and deactivate commands for active elevations
 
@@ -29,15 +29,19 @@ Add a version (for example `v0.1.3`) as the final argument to pin a release. Mak
 
 ```shell
 pim                     # guided prompts with search and filtering
-pim activate -j "Deploy" --sub platform --rg app --auto
+pim activate -j "Deploy" --sub platform --rg app   # auto-drills to resource group
+pim activate -j "Quick fix" -t 30m --yes           # 30 minutes, skip confirmation
+pim activate -j "Extended" -t 2h30m                # 2 hours 30 minutes
 pim status              # show active assignments
 pim deactivate          # stop an elevation early
 pim help activate       # discover all flags and options
 ```
 
 - Reuses existing `az login` / `Connect-AzAccount` sessions (enable `PIM_ALLOW_DEVICE_LOGIN=true` to allow device code fallback).
+- Durations support flexible formats: `30m`, `1h`, `1.5h`, `1h30m`, or plain numbers like `2` (hours). Range: 30 minutes to 8 hours in 30-minute increments.
 - Filters (`--mg`, `--sub`, `--rg`, `--role`, `--scope`) can repeat and narrow the interactive list.
-- `--auto` applies matching hints without further prompts when a single target remains.
+- Scope hints (`--sub`, `--rg`) automatically drill down when specific enough (e.g., `--mg MyGroup --sub prod` auto-selects the subscription).
+- `--yes` skips the final confirmation prompt for automation scenarios.
 
 ## 📤 Releases
 
@@ -67,3 +71,7 @@ task clean    # remove build artefacts
 ## 🙌 Get Involved
 
 Report issues, share ideas, or follow releases at [github.com/jeircul/pim](https://github.com/jeircul/pim).
+
+## 🛣️ Roadmap
+
+- Saved activation profiles (named bundles that store filters, scopes, and default justifications) to replay common elevation flows faster.
