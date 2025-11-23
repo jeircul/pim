@@ -61,7 +61,7 @@ jobs:
                 body: [
                   `Post-merge verification failed for commit ${context.sha}.`,
                   '',
-                  `- Workflow run: ${github.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`,
+                  `- Workflow run: ${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`,
                   `- Trigger: ${context.eventName}`,
                   '',
                   'Please inspect the workflow logs and address the failing tests.'
