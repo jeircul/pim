@@ -20,12 +20,12 @@
   },
   "packageRules": [
     {
-      "description": "Run go mod tidy after every gomod update",
+      "description": "Run go mod tidy after each module update",
       "matchManagers": ["gomod"],
       "postUpdateOptions": ["gomodTidy"]
     },
     {
-      "description": "Separate major / minor & patch updates for core ecosystems",
+      "description": "Separate major/minor/patch upgrades for core ecosystems",
       "matchManagers": ["gomod", "github-actions", "regex"],
       "separateMajorMinor": true,
       "separateMinorPatch": true
@@ -35,8 +35,7 @@
       "matchManagers": ["gomod"],
       "matchPackagePatterns": ["^github.com/Azure/azure-sdk-for-go"],
       "groupName": "Azure SDK for Go",
-      "stabilityDays": 3,
-      "commitMessageExtra": "azure"
+      "stabilityDays": 3
     },
     {
       "description": "Group golang.org/x libraries",
@@ -46,27 +45,28 @@
       "stabilityDays": 3
     },
     {
-      "description": "Group GitHub Actions building blocks",
+      "description": "Group shared GitHub Actions",
       "matchManagers": ["github-actions"],
       "matchPackagePatterns": [
-        "^actions/(checkout|setup-go|cache|github-script)$",
-        "^goreleaser/goreleaser-action$"
+        "^actions/(checkout|setup-go|cache)$",
+        "^goreleaser/goreleaser-action$",
+        "^actions/github-script$"
       ],
       "groupName": "GitHub Actions workflow deps"
     }
   ],
   "regexManagers": [
     {
-      "description": "Align README release snippets with the latest tag",
+      "description": "Keep README release commands in sync",
       "fileMatch": ["^README\\.md$"],
       "matchStrings": [
         "git tag v(?<currentValue>\\d+\\.\\d+\\.\\d+)",
         "git push origin v(?<currentValue>\\d+\\.\\d+\\.\\d+)",
         "for example `v(?<currentValue>\\d+\\.\\d+\\.\\d+)`"
       ],
-      "datasource": "github-tags",
+      "datasourceTemplate": "github-tags",
       "depNameTemplate": "jeircul/pim",
-      "versioning": "semver"
+      "versioningTemplate": "semver"
     }
   ]
 }
