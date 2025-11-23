@@ -6,7 +6,7 @@ import (
 )
 
 func TestParseArgsActivate(t *testing.T) {
-	cmd, err := ParseArgs([]string{"activate", "-j", "Work", "--mg", "demo", "--sub", "alpha", "--auto"})
+	cmd, err := ParseArgs([]string{"activate", "-j", "Work", "--mg", "demo", "--sub", "alpha"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -15,9 +15,6 @@ func TestParseArgsActivate(t *testing.T) {
 	}
 	if cmd.Activate.Justification != "Work" {
 		t.Fatalf("unexpected justification %q", cmd.Activate.Justification)
-	}
-	if !cmd.Activate.AutoScopeEnabled() {
-		t.Fatalf("expected auto scope to be enabled")
 	}
 	if len(cmd.Activate.ManagementGroups) != 1 || cmd.Activate.ManagementGroups[0] != "demo" {
 		t.Fatalf("unexpected management group filters: %#v", cmd.Activate.ManagementGroups)
@@ -73,27 +70,29 @@ func TestParseArgsNoArgsShowsPrompt(t *testing.T) {
 	}
 }
 
-func TestActivateConfigValidateHours(t *testing.T) {
+func TestActivateConfigValidateMinutes(t *testing.T) {
 	cases := []struct {
-		name  string
-		hours int
-		err   bool
+		name    string
+		minutes int
+		err     bool
 	}{
-		{"min", 1, false},
-		{"max", 8, false},
+		{"min", 30, false},
+		{"one hour", 60, false},
+		{"max", 480, false},
 		{"below", 0, true},
-		{"above", 9, true},
+		{"above", 600, true},
+		{"not 30 min increment", 45, true},
 	}
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := ActivateConfig{Justification: "", Hours: tt.hours}
+			cfg := ActivateConfig{Justification: "", Minutes: tt.minutes}
 			err := cfg.Validate()
 			if tt.err && err == nil {
-				t.Fatalf("expected error for hours=%d", tt.hours)
+				t.Fatalf("expected error for minutes=%d", tt.minutes)
 			}
 			if !tt.err && err != nil {
-				t.Fatalf("unexpected error for hours=%d: %v", tt.hours, err)
+				t.Fatalf("unexpected error for minutes=%d: %v", tt.minutes, err)
 			}
 		})
 	}
