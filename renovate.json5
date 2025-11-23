@@ -1,0 +1,72 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "enabledManagers": ["gomod", "github-actions", "regex"],
+  "dependencyDashboard": true,
+  "dependencyDashboardTitle": "Renovate Dashboard",
+  "timezone": "UTC",
+  "schedule": ["after 09:00 and before 17:00 on Mon-Thu"],
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+  "rangeStrategy": "bump",
+  "rebaseWhen": "conflicted",
+  "prHourlyLimit": 4,
+  "prConcurrentLimit": 8,
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 06:00 on Monday"],
+    "commitMessageSuffix": "(gomod tidy)"
+  },
+  "packageRules": [
+    {
+      "description": "Run go mod tidy after every gomod update",
+      "matchManagers": ["gomod"],
+      "postUpdateOptions": ["gomodTidy"]
+    },
+    {
+      "description": "Separate major / minor & patch updates for core ecosystems",
+      "matchManagers": ["gomod", "github-actions", "regex"],
+      "separateMajorMinor": true,
+      "separateMinorPatch": true
+    },
+    {
+      "description": "Group Azure SDK for Go modules",
+      "matchManagers": ["gomod"],
+      "matchPackagePatterns": ["^github.com/Azure/azure-sdk-for-go"],
+      "groupName": "Azure SDK for Go",
+      "stabilityDays": 3,
+      "commitMessageExtra": "azure"
+    },
+    {
+      "description": "Group golang.org/x libraries",
+      "matchManagers": ["gomod"],
+      "matchPackagePatterns": ["^golang\\.org/x/"],
+      "groupName": "golang.org/x stack",
+      "stabilityDays": 3
+    },
+    {
+      "description": "Group GitHub Actions building blocks",
+      "matchManagers": ["github-actions"],
+      "matchPackagePatterns": [
+        "^actions/(checkout|setup-go|cache|github-script)$",
+        "^goreleaser/goreleaser-action$"
+      ],
+      "groupName": "GitHub Actions workflow deps"
+    }
+  ],
+  "regexManagers": [
+    {
+      "description": "Align README release snippets with the latest tag",
+      "fileMatch": ["^README\\.md$"],
+      "matchStrings": [
+        "git tag v(?<currentValue>\\d+\\.\\d+\\.\\d+)",
+        "git push origin v(?<currentValue>\\d+\\.\\d+\\.\\d+)",
+        "for example `v(?<currentValue>\\d+\\.\\d+\\.\\d+)`"
+      ],
+      "datasource": "github-tags",
+      "depNameTemplate": "jeircul/pim",
+      "versioning": "semver"
+    }
+  ]
+}
