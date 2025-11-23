@@ -1,0 +1,74 @@
+name: Post Merge Tests
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  verify:
+    name: Run go test ./...
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Go cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Run tests
+        id: run-tests
+        continue-on-error: true
+        run: go test ./...
+
+      - name: Create issue on failure
+        if: steps.run-tests.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const shortSha = context.sha.substring(0, 7);
+            const title = `Post-merge tests failed for ${shortSha}`;
+            const search = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${owner}/${repo} "${title}" state:open type:issue`
+            });
+            if (search.data.total_count === 0) {
+              await github.rest.issues.create({
+                owner,
+                repo,
+                title,
+                body: [
+                  `Post-merge verification failed for commit ${context.sha}.`,
+                  '',
+                  `- Workflow run: ${github.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`,
+                  `- Trigger: ${context.eventName}`,
+                  '',
+                  'Please inspect the workflow logs and address the failing tests.'
+                ].join('\n')
+              });
+            }
+
+      - name: Fail workflow when tests fail
+        if: steps.run-tests.outcome == 'failure'
+        run: exit 1
