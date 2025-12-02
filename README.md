@@ -23,7 +23,7 @@ Windows (PowerShell):
 irm https://raw.githubusercontent.com/jeircul/pim/main/scripts/install.ps1 | iex
 ```
 
-Add a version (for example `v0.1.3`) as the final argument to pin a release. Make sure `~/.local/bin` (Unix) or `%LOCALAPPDATA%\Programs\pim` (Windows) is on `PATH`.
+Add a version (for example `v0.1.7`) as the final argument to pin a release. Make sure `~/.local/bin` (Unix) or `%LOCALAPPDATA%\Programs\pim` (Windows) is on `PATH`.
 
 ## 🚀 Quick Start
 
@@ -48,8 +48,8 @@ pim help activate       # discover all flags and options
 Runtime version details come from `git describe`. Publish a new release by tagging and pushing:
 
 ```shell
-git tag v0.1.4
-git push origin v0.1.4
+git tag v0.1.7
+git push origin v0.1.7
 ```
 
 A GitHub Actions workflow triggers GoReleaser to build and attach platform archives automatically.
