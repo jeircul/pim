@@ -1,17 +1,17 @@
-# pim — Azure PIM role elevation manager
+# ⚡ pim — Azure PIM role elevation manager
 
 Terminal UI for activating, deactivating, and inspecting Azure Privileged Identity Management (PIM) role assignments. Mirrors the Azure portal activation flow entirely in your terminal.
 
-## Highlights
+## ✨ Highlights
 
-- Full-screen TUI — dashboard, activation wizard, status, deactivation, favorites management
-- Flags pre-fill wizard steps and auto-advance; `--headless` bypasses the TUI for scripting
-- Adaptive theme — works on light and dark terminals
-- Favorites with 1–9 number-key shortcuts for instant re-activation
-- TOML state persistence — remembers recent justifications and favorites across sessions
-- Shell completions for bash, zsh, and fish
+- 🖥️ Full-screen TUI — dashboard, activation wizard, status, deactivation, favorites management
+- 🎯 Flags pre-fill wizard steps and auto-advance; `--headless` bypasses the TUI for scripting
+- 🎨 Adaptive theme — works on light and dark terminals
+- ⭐ Favorites with 1–9 number-key shortcuts for instant re-activation
+- 💾 TOML state persistence — remembers recent justifications and favorites across sessions
+- 🐚 Shell completions for bash, zsh, and fish
 
-## Install
+## 📦 Install
 
 macOS / Linux:
 
@@ -27,7 +27,7 @@ irm https://raw.githubusercontent.com/jeircul/pim/main/scripts/install.ps1 | iex
 
 `~/.local/bin` (Unix) or `%LOCALAPPDATA%\Programs\pim` (Windows) must be on `PATH`.
 
-## Quick start
+## 🚀 Quick start
 
 ```sh
 pim                          # TUI dashboard — shows active elevations and favorites
@@ -37,7 +37,7 @@ pim status                   # view active and eligible roles
 pim version                  # print version
 ```
 
-### Flag acceleration
+### 🏎️ Flag acceleration
 
 Flags pre-fill wizard fields and skip steps when enough information is provided:
 
@@ -57,7 +57,7 @@ pim activate \
   --yes
 ```
 
-### Headless mode (scripting / CI)
+### 🤖 Headless mode (scripting / CI)
 
 ```sh
 # Activate — all four flags required
@@ -76,7 +76,7 @@ pim status --headless --output json
 
 Exit code `0` on success, `1` on error.
 
-## Shell completions
+## 🐚 Shell completions
 
 ```sh
 # bash — add to ~/.bashrc
@@ -89,16 +89,16 @@ source <(pim completion zsh)
 pim completion fish > ~/.config/fish/completions/pim.fish
 ```
 
-## Duration format
+## ⏱️ Duration format
 
 `30m`, `1h`, `2h`, `1h30m`, `1.5h`. Range: 30 minutes – 8 hours in 30-minute increments.
 
-## Authentication
+## 🔐 Authentication
 
 Uses the existing `az login` / `Connect-AzAccount` session automatically.  
 Set `PIM_ALLOW_DEVICE_LOGIN=true` to allow interactive device code fallback when no cached credential is found.
 
-## Configuration
+## ⚙️ Configuration
 
 State is stored in `~/.config/pim/`:
 
@@ -128,7 +128,7 @@ duration = "2h"
 key  = 2
 ```
 
-## Development
+## 🛠️ Development
 
 ```sh
 task fmt      # go fmt ./...
@@ -137,7 +137,7 @@ task build    # go build ./...
 task clean    # remove build artefacts
 ```
 
-## Release
+## 📤 Release
 
 ```sh
 git tag v2.0.0
@@ -146,7 +146,7 @@ git push origin v2.0.0
 
 GoReleaser builds cross-platform archives (linux, darwin, windows — amd64 + arm64) and attaches them to the GitHub release automatically.
 
-## Disclaimer
+## ⚠️ Disclaimer
 
 Use at your own risk. The author is not responsible for any impact caused by its usage.  
 AI tooling (GitHub Copilot) assisted with portions of the implementation, reviews, and documentation.
