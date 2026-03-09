@@ -1,80 +1,78 @@
 package main
 
 import (
-	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
-	"time"
 
-	"github.com/jeircul/pim/internal/cli"
-	"github.com/jeircul/pim/pkg/azpim"
+	"github.com/jeircul/pim/internal/app"
+	"github.com/jeircul/pim/internal/azure"
+	"github.com/jeircul/pim/internal/completion"
+	"github.com/jeircul/pim/internal/headless"
+	"github.com/jeircul/pim/internal/tui"
 )
 
-// Version is set at build time.
+// Version is injected at build time via -ldflags.
 var Version = "dev"
 
 func main() {
 	if err := run(); err != nil {
-		if errors.Is(err, azpim.ErrUserCancelled) {
-			fmt.Println("\n⚠️  Operation cancelled by user")
+		if errors.Is(err, azure.ErrUserCancelled) {
+			fmt.Fprintln(os.Stderr, "cancelled")
 			os.Exit(130)
 		}
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
 func run() error {
-	cmd, err := cli.ParseArgs(os.Args[1:])
+	cfg, err := app.Parse(os.Args[1:])
 	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			app.PrintHelp()
+			return nil
+		}
+		app.PrintHelp()
 		return err
 	}
 
-	if cmd.Kind == cli.CommandPrompt {
-		cmd, err = cli.PromptCommand()
-		if err != nil {
-			return err
-		}
-	}
-
-	switch cmd.Kind {
-	case cli.CommandHelp:
-		cli.PrintHelp(cmd.HelpTopic)
-		return nil
-	case cli.CommandVersion:
+	if cfg.Version {
 		fmt.Printf("pim %s\n", Version)
 		return nil
 	}
 
-	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	if cfg.Command == app.CmdCompletion {
+		switch cfg.CompletionShell {
+		case "bash":
+			completion.Bash(os.Stdout)
+		case "zsh":
+			completion.Zsh(os.Stdout)
+		case "fish":
+			completion.Fish(os.Stdout)
+		default:
+			fmt.Fprintf(os.Stderr, "usage: pim completion <bash|zsh|fish>\n")
+			return fmt.Errorf("unknown shell: %q", cfg.CompletionShell)
+		}
+		return nil
+	}
+
+	a, err := app.New(cfg, Version)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := app.DefaultContext()
 	defer cancel()
 
-	// Initialize PIM client
-	client, err := azpim.NewClient(ctx)
-	if err != nil {
-		return fmt.Errorf("initialize client: %w", err)
+	if err := a.Connect(ctx); err != nil {
+		return err
 	}
 
-	// Get current user
-	user, err := client.GetCurrentUser()
-	if err != nil {
-		return fmt.Errorf("get current user: %w", err)
+	if cfg.IsHeadless() {
+		return headless.Run(ctx, a)
 	}
-	fmt.Printf("Authenticated as: %s (%s)\n", user.DisplayName, user.UserPrincipalName)
 
-	// Handle status, deactivation, or activation flow
-	switch cmd.Kind {
-	case cli.CommandStatus:
-		return cli.HandleStatus(ctx, client, user.ID)
-	case cli.CommandDeactivate:
-		return cli.HandleDeactivation(ctx, client, user.ID)
-	case cli.CommandActivate:
-		return cli.HandleActivation(ctx, client, user.ID, cmd.Activate)
-	case cli.CommandPrompt:
-		return fmt.Errorf("no command selected")
-	default:
-		return fmt.Errorf("unsupported command")
-	}
+	return tui.Run(a)
 }
