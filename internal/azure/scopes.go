@@ -1,0 +1,99 @@
+package azure
+
+import "strings"
+
+// IsManagementGroupScope reports whether the scope is a management group.
+func IsManagementGroupScope(scope string) bool {
+	return strings.HasPrefix(strings.ToLower(scope), "/providers/microsoft.management/managementgroups/")
+}
+
+// IsSubscriptionScope reports whether the scope is a subscription (not RG).
+func IsSubscriptionScope(scope string) bool {
+	lower := strings.ToLower(scope)
+	return strings.HasPrefix(lower, "/subscriptions/") && !strings.Contains(lower, "/resourcegroups/")
+}
+
+// IsResourceGroupScope reports whether the scope is a resource group.
+func IsResourceGroupScope(scope string) bool {
+	return strings.Contains(strings.ToLower(scope), "/resourcegroups/")
+}
+
+// ManagementGroupIDFromScope extracts the management group ID from a scope path.
+func ManagementGroupIDFromScope(scope string) string {
+	const prefix = "/providers/Microsoft.Management/managementGroups/"
+	if len(scope) < len(prefix) {
+		return ""
+	}
+	if !strings.EqualFold(scope[:len(prefix)], prefix) {
+		return ""
+	}
+	remainder := scope[len(prefix):]
+	if slash := strings.Index(remainder, "/"); slash != -1 {
+		return remainder[:slash]
+	}
+	return remainder
+}
+
+// SubscriptionIDFromScope extracts the subscription ID from a scope path.
+func SubscriptionIDFromScope(scope string) string {
+	const prefix = "/subscriptions/"
+	if len(scope) < len(prefix) {
+		return ""
+	}
+	if !strings.EqualFold(scope[:len(prefix)], prefix) {
+		return ""
+	}
+	remainder := scope[len(prefix):]
+	if slash := strings.Index(remainder, "/"); slash != -1 {
+		return remainder[:slash]
+	}
+	return remainder
+}
+
+// ResourceGroupNameFromScope extracts the subscription ID and resource group name from a scope path.
+func ResourceGroupNameFromScope(scope string) (subscriptionID, resourceGroup string) {
+	if !strings.Contains(strings.ToLower(scope), "/resourcegroups/") {
+		return "", ""
+	}
+	subscriptionID = SubscriptionIDFromScope(scope)
+	const marker = "/resourceGroups/"
+	idx := strings.Index(scope, marker)
+	if idx == -1 {
+		// Try case-insensitive
+		lower := strings.ToLower(scope)
+		idx = strings.Index(lower, strings.ToLower(marker))
+		if idx == -1 {
+			return subscriptionID, ""
+		}
+	}
+	remainder := scope[idx+len(marker):]
+	if slash := strings.Index(remainder, "/"); slash != -1 {
+		remainder = remainder[:slash]
+	}
+	return subscriptionID, remainder
+}
+
+// DefaultScopeDisplay returns a human-readable name for a scope path.
+func DefaultScopeDisplay(scope, display string) string {
+	if strings.TrimSpace(display) != "" {
+		return display
+	}
+	switch {
+	case IsResourceGroupScope(scope):
+		_, rg := ResourceGroupNameFromScope(scope)
+		if rg != "" {
+			return rg
+		}
+	case IsSubscriptionScope(scope):
+		id := SubscriptionIDFromScope(scope)
+		if id != "" {
+			return id
+		}
+	case IsManagementGroupScope(scope):
+		id := ManagementGroupIDFromScope(scope)
+		if id != "" {
+			return id
+		}
+	}
+	return scope
+}
