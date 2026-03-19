@@ -21,15 +21,20 @@ var durationChoices = []struct {
 }{
 	{"30m", 30},
 	{"1h", 60},
-	{"1.5h", 90},
+	{"1h30", 90},
 	{"2h", 120},
+	{"2h30", 150},
 	{"3h", 180},
+	{"3h30", 210},
 	{"4h", 240},
+	{"4h30", 270},
+	{"5h", 300},
+	{"5h30", 330},
 	{"6h", 360},
+	{"6h30", 390},
+	{"7h", 420},
+	{"7h30", 450},
 	{"8h", 480},
-	{"10h", 600},
-	{"12h", 720},
-	{"24h", 1440},
 }
 
 // Options is Step 3: duration selection and justification entry.
@@ -156,19 +161,24 @@ func (m Options) Update(msg tea.Msg) (Options, tea.Cmd) {
 func (m Options) View() string {
 	var sb strings.Builder
 
-	// Duration row
-	sb.WriteString(m.theme.Title.Render("Duration:") + "  ")
-	for i, d := range durationChoices {
-		if i > 0 {
-			sb.WriteString("  ")
+	// Duration row (split into two rows of 8 to fit terminal width)
+	sb.WriteString(m.theme.Title.Render("Duration:") + "\n")
+	for row := 0; row < 2; row++ {
+		start, end := row*8, row*8+8
+		for i := start; i < end; i++ {
+			if i > start {
+				sb.WriteString("  ")
+			}
+			d := durationChoices[i]
+			if i == m.durationIdx {
+				sb.WriteString(m.theme.TableRowSelected.Render("● " + d.label))
+			} else {
+				sb.WriteString(m.theme.Subtle.Render("○ " + d.label))
+			}
 		}
-		if i == m.durationIdx {
-			sb.WriteString(m.theme.TableRowSelected.Render("● " + d.label))
-		} else {
-			sb.WriteString(m.theme.Subtle.Render("○ " + d.label))
-		}
+		sb.WriteString("\n")
 	}
-	sb.WriteString("\n\n")
+	sb.WriteString("\n")
 
 	// Justification field
 	justTitle := m.theme.Title.Render("Justification:")

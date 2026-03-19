@@ -6,6 +6,7 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/jeircul/pim/internal/state"
 	"github.com/jeircul/pim/internal/tui/components"
 	"github.com/jeircul/pim/internal/tui/styles"
@@ -78,14 +79,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 func (m Model) View() string {
 	var sb strings.Builder
 
+	logoStyle := lipgloss.NewStyle().Foreground(m.theme.Accent).Bold(true)
 	for _, line := range logo {
-		sb.WriteString("  " + m.theme.Title.Render(line) + "\n")
+		sb.WriteString("  " + logoStyle.Render(line) + "\n")
 	}
 	sb.WriteString("\n")
 
 	favs := m.store.Config.Favorites
 	if len(favs) > 0 {
-		sb.WriteString(m.theme.Title.Render("Favorites") + "\n")
+		sb.WriteString(m.theme.Bold.Render("Favorites") + "\n")
 		for _, f := range favs {
 			line := ""
 			if f.Key >= 1 && f.Key <= 9 {

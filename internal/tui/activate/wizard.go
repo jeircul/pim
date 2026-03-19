@@ -101,10 +101,12 @@ func (w Wizard) Update(msg tea.Msg) (Wizard, tea.Cmd) {
 		return w.advanceFromRoles()
 
 	case ScopeTreeDoneMsg:
-		w.items = append(w.items, activationItem{
-			role:        msg.Role,
-			targetScope: msg.TargetScope,
-		})
+		for _, scope := range msg.Scopes {
+			w.items = append(w.items, activationItem{
+				role:        msg.Role,
+				targetScope: scope,
+			})
+		}
 		w.scopeQueue = w.scopeQueue[1:]
 		if len(w.scopeQueue) > 0 {
 			return w.startNextScopeTree()

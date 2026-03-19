@@ -11,10 +11,10 @@ import (
 	"github.com/jeircul/pim/internal/tui/styles"
 )
 
-// ScopeTreeDoneMsg is sent when the user confirms a scope selection for one role.
+// ScopeTreeDoneMsg is sent when the user confirms scope selections for one role.
 type ScopeTreeDoneMsg struct {
-	Role        azure.Role
-	TargetScope string // empty = use role's own scope
+	Role   azure.Role
+	Scopes []string // one activation will be created per scope
 }
 
 // scopeNode is a node in the tree (MG, subscription, or resource group).
@@ -39,7 +39,7 @@ type ScopeTree struct {
 	root     *scopeNode
 	flat     []*scopeNode // flattened visible list
 	cursor   int
-	selected string // scope path of selected node
+	selected map[string]bool // set of selected scope paths
 	width    int
 	height   int
 	// loadSubs fetches subscriptions under a management group ID.
@@ -75,6 +75,7 @@ func NewScopeTree(
 		spinner:  components.NewSpinner(theme.Active),
 		role:     role,
 		root:     root,
+		selected: make(map[string]bool),
 		loadSubs: loadSubs,
 		loadRGs:  loadRGs,
 	}
@@ -169,7 +170,6 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 					break
 				}
 				if n.loaded {
-					// children already in memory — just re-show them
 					n.expanded = true
 					m.flatten()
 					break
@@ -179,14 +179,12 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 				return m, tea.Batch(m.spinner.Init(), cmd)
 			}
 		case msg.String() == "h", msg.String() == "left":
-			// collapse
 			if m.cursor < len(m.flat) {
 				n := m.flat[m.cursor]
 				if n.expanded {
 					n.expanded = false
 					m.flatten()
 				} else if n.parent != nil {
-					// jump to parent
 					for i, fn := range m.flat {
 						if fn == n.parent {
 							m.cursor = i
@@ -197,13 +195,17 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 			}
 		case msg.String() == "space":
 			if m.cursor < len(m.flat) {
-				m.selected = m.flat[m.cursor].scope
+				scope := m.flat[m.cursor].scope
+				m.selected[scope] = !m.selected[scope]
 			}
 		case key.Matches(msg, m.keys.Enter):
-			if m.selected != "" {
-				scope := m.selected
+			if len(m.selected) > 0 {
+				scopes := make([]string, 0, len(m.selected))
+				for s := range m.selected {
+					scopes = append(scopes, s)
+				}
 				role := m.role
-				return m, func() tea.Msg { return ScopeTreeDoneMsg{Role: role, TargetScope: scope} }
+				return m, func() tea.Msg { return ScopeTreeDoneMsg{Role: role, Scopes: scopes} }
 			}
 		case key.Matches(msg, m.keys.Back), msg.String() == "esc":
 			// wizard handles Back
@@ -276,9 +278,9 @@ func (m ScopeTree) View() string {
 			prefix = "▸ "
 		}
 
-		check := m.theme.Subtle.Render("( )") + " "
-		if m.selected == n.scope {
-			check = m.theme.Active.Render("(●)") + " "
+		check := "[ ] "
+		if m.selected[n.scope] {
+			check = m.theme.Active.Render("[x]") + " "
 		}
 
 		line := cursor + indent + prefix + check + n.display
@@ -286,13 +288,14 @@ func (m ScopeTree) View() string {
 	}
 
 	sb.WriteString("\n")
-	if m.selected != "" {
-		sb.WriteString(m.theme.Subtle.Render("scope: "+m.selected) + "\n")
+	count := len(m.selected)
+	if count > 0 {
+		sb.WriteString(m.theme.Subtle.Render(fmt.Sprintf("%d selected", count)) + "\n")
 	}
 
 	hints := []key.Binding{m.keys.Up, m.keys.Down, m.keys.Enter, m.keys.Back}
 	sb.WriteString(components.RenderStatusBar(m.theme.HelpKey, m.theme.HelpDesc, m.theme.Subtle, hints,
-		"h/l collapse/expand  space select  → confirm"))
+		"h/l collapse/expand  space toggle  → confirm"))
 
 	return sb.String()
 }
