@@ -108,7 +108,7 @@ func (m RoleList) Update(msg tea.Msg) (RoleList, tea.Cmd) {
 			if m.cursor < len(m.visible)-1 {
 				m.cursor++
 			}
-		case msg.String() == " ":
+		case msg.String() == "space":
 			if len(m.visible) > 0 {
 				ri := m.visible[m.cursor]
 				m.selected[ri] = !m.selected[ri]

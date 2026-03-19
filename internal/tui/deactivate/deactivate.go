@@ -154,7 +154,7 @@ func (m Model) updateSelect(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		if m.cursor < len(m.items)-1 {
 			m.cursor++
 		}
-	case msg.String() == " ":
+	case msg.String() == "space":
 		if len(m.items) > 0 {
 			m.items[m.cursor].selected = !m.items[m.cursor].selected
 		}

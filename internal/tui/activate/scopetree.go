@@ -189,7 +189,7 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 					}
 				}
 			}
-		case msg.String() == " ":
+		case msg.String() == "space":
 			if m.cursor < len(m.flat) {
 				m.selected = m.flat[m.cursor].scope
 			}

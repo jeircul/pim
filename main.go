@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -66,13 +67,15 @@ func run() error {
 	ctx, cancel := app.DefaultContext()
 	defer cancel()
 
-	if err := a.Connect(ctx); err != nil {
-		return err
-	}
-
 	if cfg.IsHeadless() {
+		if err := a.Connect(ctx); err != nil {
+			return err
+		}
 		return headless.Run(ctx, a)
 	}
 
+	if err := a.Connect(context.Background()); err != nil {
+		return err
+	}
 	return tui.Run(a)
 }
