@@ -228,9 +228,9 @@ func (m RoleList) View() string {
 		if pos == m.cursor {
 			cursor = m.theme.TableRowSelected.Render("▸") + " "
 		}
-		check := "☐ "
+		check := "[ ] "
 		if m.selected[ri] {
-			check = m.theme.Active.Render("☑") + " "
+			check = m.theme.Active.Render("[x]") + " "
 		}
 		scope := azure.DefaultScopeDisplay(r.Scope, r.ScopeDisplay)
 		line := cursor + check + padRight(r.RoleName, 30) + " " + m.theme.Subtle.Render(scope)

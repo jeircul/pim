@@ -252,9 +252,9 @@ func (m Model) View() string {
 			if i == m.cursor {
 				cur = m.theme.TableRowSelected.Render("▸") + " "
 			}
-			check := "☐ "
+			check := "[ ] "
 			if it.selected {
-				check = m.theme.Active.Render("☑") + " "
+				check = m.theme.Active.Render("[x]") + " "
 			}
 			scope := azure.DefaultScopeDisplay(it.assignment.Scope, it.assignment.ScopeDisplay)
 			expiry := m.theme.Subtle.Render(it.assignment.ExpiryDisplay())

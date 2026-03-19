@@ -270,9 +270,9 @@ func (m ScopeTree) View() string {
 			prefix = "▸ "
 		}
 
-		check := "  "
+		check := "    "
 		if m.selected == n.scope {
-			check = m.theme.Active.Render("☑") + " "
+			check = m.theme.Active.Render("[x]") + " "
 		}
 
 		line := cursor + indent + prefix + check + n.display

@@ -54,6 +54,8 @@ type ActiveAssignment struct {
 	RoleName         string
 	RoleDefinitionID string
 	EndDateTime      string
+	// MemberType is "Direct", "Group", or "Inherited" as returned by the API.
+	MemberType string
 }
 
 // IsPermanent reports whether the assignment has no expiry.

@@ -231,6 +231,7 @@ func (c *Client) GetActiveAssignments(principalID string) ([]ActiveAssignment, e
 				PrincipalID      string `json:"principalId"`
 				Scope            string `json:"scope"`
 				RoleDefinitionID string `json:"roleDefinitionId"`
+				MemberType       string `json:"memberType"`
 				StartDateTime    string `json:"startDateTime"`
 				EndDateTime      string `json:"endDateTime"`
 				ExpandedProps    struct {
@@ -251,15 +252,13 @@ func (c *Client) GetActiveAssignments(principalID string) ([]ActiveAssignment, e
 	out := make([]ActiveAssignment, 0)
 	for _, item := range result.Value {
 		p := item.Properties
-		if p.PrincipalID != principalID {
-			continue
-		}
 		out = append(out, ActiveAssignment{
 			Scope:            p.Scope,
 			ScopeDisplay:     DefaultScopeDisplay(p.Scope, p.ExpandedProps.Scope.DisplayName),
 			RoleName:         p.ExpandedProps.RoleDefinition.DisplayName,
 			RoleDefinitionID: p.RoleDefinitionID,
 			EndDateTime:      p.EndDateTime,
+			MemberType:       p.MemberType,
 		})
 	}
 	return out, nil
