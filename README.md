@@ -130,10 +130,31 @@ key  = 2
 
 ## 🛠️ Development
 
+### Prerequisites
+
+- [Go](https://go.dev/dl/) 1.26.1+
+- [Task](https://taskfile.dev/) (task runner)
+- [GoReleaser](https://goreleaser.com/) (releases only)
+
+The quickest way to install all tools at once (Linux, macOS, WSL):
+
 ```sh
-task fmt      # go fmt ./...
+# Install mise (https://mise.jdx.dev/)
+curl https://mise.run | sh
+
+# Install all declared tools from .mise.toml
+mise install
+```
+
+Or install each tool manually via their respective docs.
+
+### Common tasks
+
+```sh
+task build    # build binary for current platform
 task test     # go test ./...
-task build    # go build ./...
+task fmt      # go fmt ./...
+task install  # build + install to ~/.local/bin
 task clean    # remove build artefacts
 ```
 
