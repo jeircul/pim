@@ -16,14 +16,13 @@ type RoleListDoneMsg struct {
 	Selected []azure.Role
 }
 
-// RoleList is Step 1 of the activation wizard: filterable multi-select role list.
+// RoleList is Step 1 of the activation wizard: filterable single-select role list.
 type RoleList struct {
 	theme     styles.Theme
 	keys      styles.KeyMap
 	spinner   components.Spinner
 	roles     []azure.Role    // full unfiltered list
 	visible   []int           // indices into roles matching filter
-	selected  map[int]bool    // set of indices (into roles) that are checked
 	active    map[string]bool // role definition IDs that are currently active
 	filter    string
 	filtering bool
@@ -33,7 +32,7 @@ type RoleList struct {
 	width     int
 	height    int
 	loadFunc  func() ([]azure.Role, error)
-	// roleFilter pre-selects roles matching these names (from --role flags)
+	// roleFilter auto-advances when a single --role flag match is found
 	roleFilter []string
 }
 
@@ -53,7 +52,6 @@ func NewRoleList(
 		theme:      theme,
 		keys:       keys,
 		spinner:    components.NewSpinner(theme.Active),
-		selected:   make(map[int]bool),
 		active:     activeIDs,
 		loading:    true,
 		loadFunc:   loadFunc,
@@ -89,7 +87,10 @@ func (m RoleList) Update(msg tea.Msg) (RoleList, tea.Cmd) {
 		m.err = msg.err
 		m.roles = msg.roles
 		m.applyFilter()
-		m.autoSelect()
+		// Auto-advance: if --role flag matches exactly one visible role, select it.
+		if cmd := m.autoAdvance(); cmd != nil {
+			return m, cmd
+		}
 		return m, nil
 
 	case tea.KeyPressMsg:
@@ -108,11 +109,6 @@ func (m RoleList) Update(msg tea.Msg) (RoleList, tea.Cmd) {
 			if m.cursor < len(m.visible)-1 {
 				m.cursor++
 			}
-		case msg.String() == "space":
-			if len(m.visible) > 0 {
-				ri := m.visible[m.cursor]
-				m.selected[ri] = !m.selected[ri]
-			}
 		case msg.String() == "/":
 			m.filtering = true
 		case msg.String() == "esc":
@@ -123,9 +119,10 @@ func (m RoleList) Update(msg tea.Msg) (RoleList, tea.Cmd) {
 				m.cursor = 0
 			}
 		case key.Matches(msg, m.keys.Enter), msg.String() == "right", msg.String() == "l":
-			selected := m.collectSelected()
-			if len(selected) > 0 {
-				return m, func() tea.Msg { return RoleListDoneMsg{Selected: selected} }
+			if len(m.visible) > 0 {
+				ri := m.visible[m.cursor]
+				r := m.roles[ri]
+				return m, func() tea.Msg { return RoleListDoneMsg{Selected: []azure.Role{r}} }
 			}
 		}
 
@@ -148,6 +145,10 @@ func (m RoleList) updateFilter(msg tea.KeyPressMsg) (RoleList, tea.Cmd) {
 			m.applyFilter()
 			m.cursor = 0
 		}
+	case "space":
+		m.filter += " "
+		m.applyFilter()
+		m.cursor = 0
 	default:
 		if r := msg.String(); len(r) == 1 {
 			m.filter += r
@@ -173,29 +174,27 @@ func (m *RoleList) applyFilter() {
 	}
 }
 
-// autoSelect pre-selects roles matching the roleFilter flag values.
-func (m *RoleList) autoSelect() {
+// autoAdvance returns a cmd that immediately selects a role when exactly one
+// --role flag match is found in the visible list, skipping manual selection.
+func (m *RoleList) autoAdvance() tea.Cmd {
 	if len(m.roleFilter) == 0 {
-		return
+		return nil
 	}
-	for i, r := range m.roles {
+	var matches []azure.Role
+	for _, ri := range m.visible {
+		r := m.roles[ri]
 		for _, f := range m.roleFilter {
 			if strings.EqualFold(r.RoleName, f) {
-				m.selected[i] = true
+				matches = append(matches, r)
 				break
 			}
 		}
 	}
-}
-
-func (m *RoleList) collectSelected() []azure.Role {
-	var out []azure.Role
-	for i, r := range m.roles {
-		if m.selected[i] {
-			out = append(out, r)
-		}
+	if len(matches) != 1 {
+		return nil
 	}
-	return out
+	r := matches[0]
+	return func() tea.Msg { return RoleListDoneMsg{Selected: []azure.Role{r}} }
 }
 
 // View renders the role list step.
@@ -211,7 +210,7 @@ func (m RoleList) View() string {
 		return sb.String()
 	}
 
-	sb.WriteString(m.theme.Title.Render("Select roles to activate:") + "\n")
+	sb.WriteString(m.theme.Title.Render("Select role to activate:") + "\n")
 
 	// Filter bar
 	if m.filtering {
@@ -224,45 +223,23 @@ func (m RoleList) View() string {
 
 	for pos, ri := range m.visible {
 		r := m.roles[ri]
-		cursor := "  "
-		if pos == m.cursor {
-			cursor = m.theme.TableRowSelected.Render("▸") + " "
-		}
-		check := "[ ] "
-		if m.selected[ri] {
-			check = m.theme.Active.Render("[x]") + " "
-		}
 		scope := azure.DefaultScopeDisplay(r.Scope, r.ScopeDisplay)
-		line := cursor + check + padRight(r.RoleName, 30) + " " + m.theme.Subtle.Render(scope)
+		line := fmt.Sprintf("  %-40s %s", r.RoleName, m.theme.Subtle.Render(scope))
 		if m.active[r.RoleDefinitionID] {
 			line += " " + m.theme.Subtle.Render("(active)")
+		}
+		if pos == m.cursor {
+			line = m.theme.TableRowSelected.Render("▸") + line[1:]
 		}
 		sb.WriteString(line + "\n")
 	}
 
-	count := 0
-	for _, v := range m.selected {
-		if v {
-			count++
-		}
-	}
 	sb.WriteString("\n")
-	if count > 0 {
-		sb.WriteString(m.theme.Subtle.Render(pluralf(count, "selected")) + "\n")
-	}
-
 	hints := []key.Binding{m.keys.Up, m.keys.Down, m.keys.Enter, m.keys.Back, m.keys.Quit}
 	sb.WriteString(components.RenderStatusBar(m.theme.HelpKey, m.theme.HelpDesc, m.theme.Subtle, hints,
-		"space toggle  / filter  → next"))
+		"/ filter  → activate"))
 
 	return sb.String()
-}
-
-func padRight(s string, n int) string {
-	if len(s) >= n {
-		return s
-	}
-	return s + strings.Repeat(" ", n-len(s))
 }
 
 func pluralf(n int, noun string) string {

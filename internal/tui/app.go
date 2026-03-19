@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/jeircul/pim/internal/app"
@@ -39,7 +40,7 @@ func titleOf(s Screen) string {
 	case ScreenFavorites:
 		return "favorites"
 	default:
-		return "dashboard"
+		return "pim"
 	}
 }
 
@@ -72,9 +73,7 @@ func New(a *app.App) (AppModel, error) {
 	}
 	principalID := user.ID
 
-	dash := dashboard.New(theme, keys, a.Store, func() ([]azure.ActiveAssignment, error) {
-		return a.Client.GetActiveAssignments(principalID)
-	})
+	dash := dashboard.New(theme, keys, a.Store)
 
 	stat := status.New(theme, keys, func() ([]azure.ActiveAssignment, []azure.Role, error) {
 		active, err := a.Client.GetActiveAssignments(principalID)
@@ -171,13 +170,13 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Navigation shortcuts are only intercepted on the dashboard.
 		// All other screens own their key handling, including esc/q for back/cancel.
 		if m.screen == ScreenDashboard {
-			switch msg.String() {
-			case "s":
+			switch {
+			case msg.String() == "s":
 				m.screen = ScreenStatus
 				return m, m.statusModel.Init()
-			case "D":
+			case key.Matches(msg, m.keys.Deactivate):
 				return m, m.startDeactivate()
-			case "f":
+			case msg.String() == "f":
 				m.screen = ScreenFavorites
 				return m, m.favoritesModel.Init()
 			}

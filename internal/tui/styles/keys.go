@@ -4,16 +4,17 @@ import "charm.land/bubbles/v2/key"
 
 // KeyMap defines all global keybindings.
 type KeyMap struct {
-	Quit      key.Binding
-	Help      key.Binding
-	Back      key.Binding
-	Activate  key.Binding
-	Status    key.Binding
-	Dashboard key.Binding
-	Up        key.Binding
-	Down      key.Binding
-	Enter     key.Binding
-	Refresh   key.Binding
+	Quit       key.Binding
+	Help       key.Binding
+	Back       key.Binding
+	Activate   key.Binding
+	Deactivate key.Binding
+	Status     key.Binding
+	Dashboard  key.Binding
+	Up         key.Binding
+	Down       key.Binding
+	Enter      key.Binding
+	Refresh    key.Binding
 }
 
 // DefaultKeyMap returns the application-wide default keybindings.
@@ -33,6 +34,10 @@ var DefaultKeyMap = KeyMap{
 	Activate: key.NewBinding(
 		key.WithKeys("a"),
 		key.WithHelp("a", "activate"),
+	),
+	Deactivate: key.NewBinding(
+		key.WithKeys("D"),
+		key.WithHelp("D", "deactivate"),
 	),
 	Status: key.NewBinding(
 		key.WithKeys("s"),

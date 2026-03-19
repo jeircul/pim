@@ -129,6 +129,12 @@ func (m Options) Update(msg tea.Msg) (Options, tea.Cmd) {
 				m.recentCursor = -1
 			}
 
+		case "space":
+			if m.focusJust {
+				m.justification += " "
+				m.recentCursor = -1
+			}
+
 		default:
 			if m.focusJust && len(msg.String()) == 1 {
 				m.justification += msg.String()
