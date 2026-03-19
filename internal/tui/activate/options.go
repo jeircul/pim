@@ -21,9 +21,15 @@ var durationChoices = []struct {
 }{
 	{"30m", 30},
 	{"1h", 60},
+	{"1.5h", 90},
 	{"2h", 120},
+	{"3h", 180},
 	{"4h", 240},
+	{"6h", 360},
 	{"8h", 480},
+	{"10h", 600},
+	{"12h", 720},
+	{"24h", 1440},
 }
 
 // Options is Step 3: duration selection and justification entry.

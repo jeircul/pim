@@ -17,9 +17,10 @@ type ActivateMsg struct {
 }
 
 var logo = []string{
-	"█▀█ █ █▀▄▀█",
-	"█▀▀ █ █ ▀ █",
-	"▀   ▀ ▀   ▀",
+	" ___  _ __  __ ",
+	"| _ \\| |  \\/  |",
+	"|  _/| | |\\/| |",
+	"|_|  |_|_|  |_|",
 }
 
 // Model is the landing screen model. It loads no data on startup.

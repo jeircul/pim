@@ -163,14 +163,20 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 				m.cursor++
 			}
 		case msg.String() == "l", msg.String() == "right":
-			// expand
 			if m.cursor < len(m.flat) {
 				n := m.flat[m.cursor]
-				if n.kind != azure.ScopeResourceGroup && !n.expanded {
-					cmd := m.expandNode(n)
-					m.flatten()
-					return m, tea.Batch(m.spinner.Init(), cmd)
+				if n.kind == azure.ScopeResourceGroup || n.expanded {
+					break
 				}
+				if n.loaded {
+					// children already in memory — just re-show them
+					n.expanded = true
+					m.flatten()
+					break
+				}
+				cmd := m.expandNode(n)
+				m.flatten()
+				return m, tea.Batch(m.spinner.Init(), cmd)
 			}
 		case msg.String() == "h", msg.String() == "left":
 			// collapse
@@ -270,9 +276,9 @@ func (m ScopeTree) View() string {
 			prefix = "▸ "
 		}
 
-		check := "    "
+		check := m.theme.Subtle.Render("( )") + " "
 		if m.selected == n.scope {
-			check = m.theme.Active.Render("[x]") + " "
+			check = m.theme.Active.Render("(●)") + " "
 		}
 
 		line := cursor + indent + prefix + check + n.display
