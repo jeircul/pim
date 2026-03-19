@@ -107,7 +107,9 @@ func (w Wizard) Update(msg tea.Msg) (Wizard, tea.Cmd) {
 				targetScope: scope,
 			})
 		}
-		w.scopeQueue = w.scopeQueue[1:]
+		if len(w.scopeQueue) > 0 {
+			w.scopeQueue = w.scopeQueue[1:]
+		}
 		if len(w.scopeQueue) > 0 {
 			return w.startNextScopeTree()
 		}
@@ -165,6 +167,18 @@ func (w Wizard) handleBack() (Wizard, tea.Cmd) {
 		return w, w.roleList.Init()
 	case stepOptions:
 		if w.scopeVisited {
+			// Rebuild scope queue and items so the user can re-select scopes.
+			w.items = nil
+			var treeRoles []azure.Role
+			for _, r := range w.selectedRoles {
+				switch r.ScopeKind() {
+				case azure.ScopeManagementGroup, azure.ScopeSubscription:
+					if w.scopeOverride(r) == "" {
+						treeRoles = append(treeRoles, r)
+					}
+				}
+			}
+			w.scopeQueue = treeRoles
 			w.step = stepScopeTree
 			return w, w.scopeTree.Init()
 		}
@@ -230,23 +244,32 @@ func (w Wizard) HeaderTitle() string { return "activate" }
 
 // advanceFromRoles decides whether to show scope trees or skip straight to options.
 func (w Wizard) advanceFromRoles() (Wizard, tea.Cmd) {
-	// Partition into MG-scoped (need scope tree) and direct (sub/RG scope).
-	var mgRoles []azure.Role
+	// Partition into roles that need scope selection and those that don't.
+	// MG-scoped roles: show full MG tree so user can drill to sub/RG.
+	// Sub-scoped roles: show sub-rooted tree so user can optionally drill to RG.
+	// RG-scoped roles: already at leaf scope — go straight to options.
+	var treeRoles []azure.Role
 	for _, r := range w.selectedRoles {
-		if r.ScopeKind() == azure.ScopeManagementGroup {
-			// Check if --scope flag overrides
+		switch r.ScopeKind() {
+		case azure.ScopeManagementGroup:
 			if w.scopeOverride(r) != "" {
 				w.items = append(w.items, activationItem{role: r, targetScope: w.scopeOverride(r)})
 			} else {
-				mgRoles = append(mgRoles, r)
+				treeRoles = append(treeRoles, r)
 			}
-		} else {
+		case azure.ScopeSubscription:
+			if w.scopeOverride(r) != "" {
+				w.items = append(w.items, activationItem{role: r, targetScope: w.scopeOverride(r)})
+			} else {
+				treeRoles = append(treeRoles, r)
+			}
+		default:
 			w.items = append(w.items, activationItem{role: r})
 		}
 	}
 
-	if len(mgRoles) > 0 {
-		w.scopeQueue = mgRoles
+	if len(treeRoles) > 0 {
+		w.scopeQueue = treeRoles
 		return w.startNextScopeTree()
 	}
 	return w.startOptions()
@@ -266,7 +289,11 @@ func (w Wizard) scopeOverride(r azure.Role) string {
 
 func (w Wizard) startNextScopeTree() (Wizard, tea.Cmd) {
 	role := w.scopeQueue[0]
-	w.scopeTree = NewScopeTree(w.theme, w.keys, role, w.deps.LoadSubs, w.deps.LoadRGs)
+	if role.ScopeKind() == azure.ScopeSubscription {
+		w.scopeTree = NewScopeTreeForSub(w.theme, w.keys, role, w.deps.LoadRGs)
+	} else {
+		w.scopeTree = NewScopeTree(w.theme, w.keys, role, w.deps.LoadSubs, w.deps.LoadRGs)
+	}
 	w.step = stepScopeTree
 	w.scopeVisited = true
 	return w, w.scopeTree.Init()

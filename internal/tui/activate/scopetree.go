@@ -30,7 +30,7 @@ type scopeNode struct {
 	parent   *scopeNode
 }
 
-// ScopeTree is Step 2: lazy-loaded scope tree for MG-scoped roles.
+// ScopeTree is Step 2: lazy-loaded scope tree for MG- or subscription-scoped roles.
 type ScopeTree struct {
 	theme    styles.Theme
 	keys     styles.KeyMap
@@ -42,6 +42,9 @@ type ScopeTree struct {
 	selected map[string]bool // set of selected scope paths
 	width    int
 	height   int
+	// subRoot is true when the tree is rooted at a subscription (not an MG).
+	// In this mode the root can be selected directly without expansion.
+	subRoot bool
 	// loadSubs fetches subscriptions under a management group ID.
 	loadSubs func(mgID string) ([]azure.Subscription, error)
 	// loadRGs fetches resource groups under a subscription ID.
@@ -83,8 +86,41 @@ func NewScopeTree(
 	return st
 }
 
-// Init starts the spinner and triggers root expansion.
+// NewScopeTreeForSub creates a ScopeTree rooted at the subscription for the
+// given subscription-scoped role. The user may select the subscription itself
+// or expand it to choose a resource group.
+func NewScopeTreeForSub(
+	theme styles.Theme,
+	keys styles.KeyMap,
+	role azure.Role,
+	loadRGs func(string) ([]azure.ResourceGroup, error),
+) ScopeTree {
+	root := &scopeNode{
+		id:      azure.SubscriptionIDFromScope(role.Scope),
+		display: azure.DefaultScopeDisplay(role.Scope, role.ScopeDisplay),
+		kind:    azure.ScopeSubscription,
+		scope:   role.Scope,
+	}
+	st := ScopeTree{
+		theme:    theme,
+		keys:     keys,
+		spinner:  components.NewSpinner(theme.Active),
+		role:     role,
+		root:     root,
+		selected: make(map[string]bool),
+		subRoot:  true,
+		loadRGs:  loadRGs,
+	}
+	st.flatten()
+	return st
+}
+
+// Init starts the spinner and, for MG-rooted trees, triggers root expansion.
 func (m ScopeTree) Init() tea.Cmd {
+	if m.subRoot {
+		// Subscription-rooted: don't auto-expand; user selects sub or drills to RGs.
+		return m.spinner.Init()
+	}
 	return tea.Batch(
 		m.spinner.Init(),
 		m.expandNode(m.root),
@@ -169,14 +205,17 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 				if n.kind == azure.ScopeResourceGroup || n.expanded {
 					break
 				}
-				if n.loaded {
-					n.expanded = true
+				// MG nodes and subscription nodes (when sub is root) can be expanded.
+				if n.kind == azure.ScopeManagementGroup || (n.kind == azure.ScopeSubscription && n != m.root) || m.subRoot {
+					if n.loaded {
+						n.expanded = true
+						m.flatten()
+						break
+					}
+					cmd := m.expandNode(n)
 					m.flatten()
-					break
+					return m, tea.Batch(m.spinner.Init(), cmd)
 				}
-				cmd := m.expandNode(n)
-				m.flatten()
-				return m, tea.Batch(m.spinner.Init(), cmd)
 			}
 		case msg.String() == "h", msg.String() == "left":
 			if m.cursor < len(m.flat) {

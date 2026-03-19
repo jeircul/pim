@@ -11,6 +11,9 @@ import (
 	"github.com/jeircul/pim/internal/tui/styles"
 )
 
+// CancelMsg is sent when the user navigates back from the status screen.
+type CancelMsg struct{}
+
 // LoadMsg carries the result of the status data fetch.
 type LoadMsg struct {
 	Active   []azure.ActiveAssignment
@@ -50,6 +53,9 @@ func New(
 
 // Init starts the spinner and triggers data load.
 func (m Model) Init() tea.Cmd {
+	if m.loadFunc == nil {
+		return nil
+	}
 	return tea.Batch(
 		m.spinner.Init(),
 		func() tea.Msg {
@@ -75,8 +81,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		switch {
-		case key.Matches(msg, m.keys.Quit):
-			return m, tea.Quit
+		case key.Matches(msg, m.keys.Back), msg.String() == "esc", msg.String() == "q":
+			return m, func() tea.Msg { return CancelMsg{} }
 		case key.Matches(msg, m.keys.Up):
 			if m.cursor > 0 {
 				m.cursor--

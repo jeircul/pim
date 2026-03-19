@@ -62,30 +62,20 @@ type AppModel struct {
 	showHelp        bool
 }
 
-// New creates the root AppModel. Fetches current user synchronously.
+// userReadyMsg carries the resolved principal ID from the background user fetch.
+type userReadyMsg struct {
+	principalID string
+	err         error
+}
+
+// New creates the root AppModel. User fetch is deferred to Init().
 func New(a *app.App) (AppModel, error) {
 	keys := DefaultKeyMap
 	theme := NewTheme(true)
 
-	user, err := a.Client.GetCurrentUser()
-	if err != nil {
-		return AppModel{}, err
-	}
-	principalID := user.ID
-
 	dash := dashboard.New(theme, keys, a.Store)
 
-	stat := status.New(theme, keys, func() ([]azure.ActiveAssignment, []azure.Role, error) {
-		active, err := a.Client.GetActiveAssignments(principalID)
-		if err != nil {
-			return nil, nil, err
-		}
-		eligible, err := a.Client.GetEligibleRoles()
-		if err != nil {
-			return nil, nil, err
-		}
-		return active, eligible, nil
-	})
+	stat := status.New(theme, keys, nil) // loadFunc set after principalID resolves
 
 	favs := favorites.New(theme, keys, a.Store)
 
@@ -97,22 +87,25 @@ func New(a *app.App) (AppModel, error) {
 		dashboardModel: dash,
 		statusModel:    stat,
 		favoritesModel: favs,
-		principalID:    principalID,
 	}, nil
 }
 
-// Init initialises the active screen based on the invoked command.
+// Init initialises the active screen and starts the background user fetch.
 func (m AppModel) Init() tea.Cmd {
-	switch m.a.Config.Command {
-	case app.CmdActivate:
-		return m.startWizard(nil)
-	case app.CmdDeactivate:
-		return m.startDeactivate()
-	case app.CmdStatus:
-		m.screen = ScreenStatus
-		return m.statusModel.Init()
+	fetchUser := func() tea.Msg {
+		user, err := m.a.Client.GetCurrentUser()
+		if err != nil {
+			return userReadyMsg{err: err}
+		}
+		return userReadyMsg{principalID: user.ID}
 	}
-	return m.dashboardModel.Init()
+	// For headless commands the actual screen transition is deferred until
+	// userReadyMsg arrives (principalID is required for all PIM API calls).
+	// For the default dashboard path, start the dashboard immediately.
+	if m.a.Config.Command == "" {
+		return tea.Batch(fetchUser, m.dashboardModel.Init())
+	}
+	return fetchUser
 }
 
 // Update routes messages to the active screen and handles global keys.
@@ -125,6 +118,42 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.BackgroundColorMsg:
 		m.isDark = msg.IsDark()
 		m.theme = NewTheme(m.isDark)
+		return m, nil
+
+	case userReadyMsg:
+		if msg.err != nil {
+			// Non-fatal: show error on dashboard and let user retry.
+			return m, nil
+		}
+		m.principalID = msg.principalID
+		client := m.a.Client
+		pid := m.principalID
+		m.statusModel = status.New(m.theme, m.keys, func() ([]azure.ActiveAssignment, []azure.Role, error) {
+			active, err := client.GetActiveAssignments(pid)
+			if err != nil {
+				return nil, nil, err
+			}
+			eligible, err := client.GetEligibleRoles()
+			if err != nil {
+				return nil, nil, err
+			}
+			return active, eligible, nil
+		})
+		// If a headless command was pending, dispatch it now.
+		switch m.a.Config.Command {
+		case app.CmdActivate:
+			return m, m.startWizard(nil)
+		case app.CmdDeactivate:
+			return m, m.startDeactivate()
+		case app.CmdStatus:
+			m.screen = ScreenStatus
+			return m, m.statusModel.Init()
+		}
+		return m, nil
+
+	// Status results.
+	case status.CancelMsg:
+		m.screen = ScreenDashboard
 		return m, nil
 
 	// Activation wizard results.
