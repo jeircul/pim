@@ -43,6 +43,9 @@ type Deps struct {
 	Activate    func(role azure.Role, principalID, justification string, minutes int, targetScope string) error
 }
 
+// autoConfirmMsg triggers auto-submission on the confirm step (--yes flag).
+type autoConfirmMsg struct{}
+
 // Wizard is the root model for the 4-step activation flow.
 type Wizard struct {
 	theme  styles.Theme
@@ -62,6 +65,7 @@ type Wizard struct {
 	selectedRoles []azure.Role
 	scopeQueue    []azure.Role // MG-scoped roles still needing scope selection
 	items         []activationItem
+	scopeVisited  bool // whether the scope tree step was visited this run
 }
 
 // New creates a Wizard. Call Init() to start.
@@ -116,30 +120,19 @@ func (w Wizard) Update(msg tea.Msg) (Wizard, tea.Cmd) {
 		done := WizardDoneMsg{Errors: msg.Errors}
 		return w, func() tea.Msg { return done }
 
-	case tea.KeyPressMsg:
-		// Global back/cancel
-		if msg.String() == "esc" || msg.String() == "q" {
-			switch w.step {
-			case stepRoleList:
-				return w, func() tea.Msg { return WizardCancelMsg{} }
-			case stepScopeTree:
-				w.step = stepRoleList
-				return w, w.roleList.Init()
-			case stepOptions:
-				w.step = stepRoleList
-				return w, w.roleList.Init()
-			case stepConfirm:
-				w.step = stepOptions
-				return w, w.options.Init()
-			}
-		}
+	case autoConfirmMsg:
+		return w.handleAutoConfirm()
 	}
 
-	// Delegate to active step.
+	// Delegate to active step first so sub-models (e.g. filter mode in rolelist)
+	// can consume the key before the wizard interprets it as back/cancel.
 	var cmd tea.Cmd
+	var consumed bool
 	switch w.step {
 	case stepRoleList:
+		prev := w.roleList
 		w.roleList, cmd = w.roleList.Update(msg)
+		consumed = roleListConsumed(prev, w.roleList, msg)
 	case stepScopeTree:
 		w.scopeTree, cmd = w.scopeTree.Update(msg)
 	case stepOptions:
@@ -147,7 +140,68 @@ func (w Wizard) Update(msg tea.Msg) (Wizard, tea.Cmd) {
 	case stepConfirm:
 		w.confirm, cmd = w.confirm.Update(msg)
 	}
+	if cmd != nil || consumed {
+		return w, cmd
+	}
+
+	// Sub-model did not consume the key; handle wizard-level back/cancel.
+	if kp, ok := msg.(tea.KeyPressMsg); ok {
+		if kp.String() == "esc" || kp.String() == "q" {
+			return w.handleBack()
+		}
+	}
 	return w, cmd
+}
+
+// handleBack navigates one step back or cancels the wizard.
+func (w Wizard) handleBack() (Wizard, tea.Cmd) {
+	switch w.step {
+	case stepRoleList:
+		return w, func() tea.Msg { return WizardCancelMsg{} }
+	case stepScopeTree:
+		w.step = stepRoleList
+		return w, w.roleList.Init()
+	case stepOptions:
+		if w.scopeVisited {
+			w.step = stepScopeTree
+			return w, w.scopeTree.Init()
+		}
+		w.step = stepRoleList
+		return w, w.roleList.Init()
+	case stepConfirm:
+		w.step = stepOptions
+		return w, w.options.Init()
+	}
+	return w, nil
+}
+
+// handleAutoConfirm executes the --yes submission on the confirm step.
+func (w Wizard) handleAutoConfirm() (Wizard, tea.Cmd) {
+	if w.step != stepConfirm {
+		return w, nil
+	}
+	w.confirm.submitted = true
+	cmds := make([]tea.Cmd, len(w.confirm.items))
+	for i := range w.confirm.items {
+		w.confirm.items[i].status = statusRunning
+		cmds[i] = w.confirm.runActivation(i)
+	}
+	return w, tea.Batch(append([]tea.Cmd{w.confirm.spinner.Init()}, cmds...)...)
+}
+
+// roleListConsumed reports whether the rolelist consumed the message.
+// It returns true when the list was in filter mode (the key typed into the filter).
+func roleListConsumed(prev, next RoleList, msg tea.Msg) bool {
+	kp, ok := msg.(tea.KeyPressMsg)
+	if !ok {
+		return false
+	}
+	// If the list was filtering, it consumed everything except enter/esc that exit filter.
+	if prev.filtering {
+		s := kp.String()
+		return s != "enter" && s != "esc"
+	}
+	return false
 }
 
 // View renders the current step with a wizard header.
@@ -196,13 +250,15 @@ func (w Wizard) advanceFromRoles() (Wizard, tea.Cmd) {
 	return w.startOptions()
 }
 
+// scopeOverride returns the first --scope flag value that is a prefix of r.Scope,
+// enabling targeted sub-scope activation for MG-scoped roles.
 func (w Wizard) scopeOverride(r azure.Role) string {
 	for _, s := range w.deps.ScopeFilter {
-		if strings.TrimSpace(s) != "" {
+		s = strings.TrimSpace(s)
+		if s != "" && strings.HasPrefix(strings.ToLower(r.Scope), strings.ToLower(s)) {
 			return s
 		}
 	}
-	_ = r
 	return ""
 }
 
@@ -210,6 +266,7 @@ func (w Wizard) startNextScopeTree() (Wizard, tea.Cmd) {
 	role := w.scopeQueue[0]
 	w.scopeTree = NewScopeTree(w.theme, w.keys, role, w.deps.LoadSubs, w.deps.LoadRGs)
 	w.step = stepScopeTree
+	w.scopeVisited = true
 	return w, w.scopeTree.Init()
 }
 
@@ -250,11 +307,9 @@ func (w Wizard) startConfirm(minutes int, justification string) (Wizard, tea.Cmd
 	)
 	w.step = stepConfirm
 
-	// --yes: auto-submit immediately.
+	// --yes: auto-submit immediately via a typed message so Confirm.Update handles it.
 	if w.deps.AutoSubmit {
-		return w, func() tea.Msg {
-			return tea.KeyPressMsg{} // trigger Enter in Confirm via direct cmd
-		}
+		return w, func() tea.Msg { return autoConfirmMsg{} }
 	}
 
 	return w, w.confirm.Init()
@@ -271,18 +326,19 @@ func (w Wizard) renderStepIndicator() string {
 		{"confirm", stepConfirm},
 	}
 
-	// Count visible steps (scope may be skipped)
 	var parts []string
 	for i, st := range steps {
 		n := i + 1
-		label := fmt.Sprintf("%d. %s", n, st.label)
-		if st.s == w.step {
-			parts = append(parts, w.theme.TableRowSelected.Render(label))
-		} else if int(st.s) < int(w.step) {
-			parts = append(parts, w.theme.Subtle.Render(label))
-		} else {
-			parts = append(parts, w.theme.Subtle.Render(label))
+		var label string
+		switch {
+		case st.s == w.step:
+			label = w.theme.TableRowSelected.Render(fmt.Sprintf("%d. %s", n, st.label))
+		case int(st.s) < int(w.step):
+			label = w.theme.Subtle.Render(fmt.Sprintf("✓ %s", st.label))
+		default:
+			label = w.theme.Subtle.Render(fmt.Sprintf("%d. %s", n, st.label))
 		}
+		parts = append(parts, label)
 	}
 	return strings.Join(parts, w.theme.Subtle.Render("  ›  "))
 }

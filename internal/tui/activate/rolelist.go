@@ -271,10 +271,3 @@ func pluralf(n int, noun string) string {
 	}
 	return fmt.Sprintf("%d %ss", n, noun)
 }
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}

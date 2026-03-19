@@ -193,7 +193,7 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 			if m.cursor < len(m.flat) {
 				m.selected = m.flat[m.cursor].scope
 			}
-		case key.Matches(msg, m.keys.Enter), msg.String() == "right":
+		case key.Matches(msg, m.keys.Enter):
 			if m.selected != "" {
 				scope := m.selected
 				role := m.role

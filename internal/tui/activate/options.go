@@ -62,7 +62,7 @@ func NewOptions(
 		justification: justification,
 		recentJusts:   recentJusts,
 		recentCursor:  -1,
-		focusJust:     justification == "",
+		focusJust:     false,
 	}
 }
 
@@ -111,8 +111,6 @@ func (m Options) Update(msg tea.Msg) (Options, tea.Cmd) {
 					m.recentCursor++
 					m.justification = m.recentJusts[m.recentCursor]
 				}
-			} else if !m.focusJust {
-				m.focusJust = false
 			}
 
 		case "down", "j":

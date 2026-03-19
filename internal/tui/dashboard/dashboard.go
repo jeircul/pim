@@ -141,7 +141,9 @@ func (m Model) View() string {
 	}
 
 	if m.err != nil {
-		sb.WriteString(m.theme.Subtle.Render("error: "+m.err.Error()) + "\n")
+		sb.WriteString(m.theme.Subtle.Render("error: "+m.err.Error()) + "\n\n")
+		hints := []key.Binding{m.keys.Activate, m.keys.Refresh, m.keys.Quit}
+		sb.WriteString(components.RenderStatusBar(m.theme.HelpKey, m.theme.HelpDesc, m.theme.Subtle, hints, ""))
 		return sb.String()
 	}
 

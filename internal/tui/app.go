@@ -165,38 +165,21 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.showHelp {
-			// Any key closes help overlay.
 			m.showHelp = false
 			return m, nil
 		}
-		switch msg.String() {
-		case "s":
-			if m.screen != ScreenStatus {
+		// Navigation shortcuts are only intercepted on the dashboard.
+		// All other screens own their key handling, including esc/q for back/cancel.
+		if m.screen == ScreenDashboard {
+			switch msg.String() {
+			case "s":
 				m.screen = ScreenStatus
 				return m, m.statusModel.Init()
-			}
-		case "d":
-			if m.screen != ScreenDashboard {
-				m.screen = ScreenDashboard
-				return m, m.dashboardModel.Init()
-			}
-		case "a":
-			if m.screen != ScreenActivate {
-				return m, m.startWizard(nil)
-			}
-		case "D":
-			if m.screen != ScreenDeactivate {
+			case "D":
 				return m, m.startDeactivate()
-			}
-		case "f":
-			if m.screen != ScreenFavorites {
+			case "f":
 				m.screen = ScreenFavorites
 				return m, m.favoritesModel.Init()
-			}
-		case "esc":
-			if m.screen != ScreenDashboard {
-				m.screen = ScreenDashboard
-				return m, nil
 			}
 		}
 	}
