@@ -88,68 +88,64 @@ func (m Options) Update(msg tea.Msg) (Options, tea.Cmd) {
 		m.height = msg.Height
 
 	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "tab":
-			m.focusJust = !m.focusJust
-			m.recentCursor = -1
-
-		case "enter":
-			if !m.focusJust {
-				// advance from duration row
-				m.focusJust = true
-				return m, nil
-			}
-			// submit
-			if m.justification != "" {
-				mins := durationChoices[m.durationIdx].minutes
-				j := m.justification
-				return m, func() tea.Msg { return OptionsDoneMsg{Minutes: mins, Justification: j} }
-			}
-
-		case "right", "l":
-			if !m.focusJust && m.durationIdx < len(durationChoices)-1 {
-				m.durationIdx++
-			}
-
-		case "left", "h":
-			if !m.focusJust && m.durationIdx > 0 {
-				m.durationIdx--
-			}
-
-		case "up", "k":
-			if m.focusJust && len(m.recentJusts) > 0 {
-				if m.recentCursor < len(m.recentJusts)-1 {
+		if m.focusJust {
+			// Text input mode: all keys type into the justification field except
+			// the special keys below. Always return a consumed signal so parent
+			// models (wizard, app) know not to intercept this key.
+			switch msg.String() {
+			case "tab":
+				m.focusJust = false
+				m.recentCursor = -1
+			case "enter":
+				if m.justification != "" {
+					mins := durationChoices[m.durationIdx].minutes
+					j := m.justification
+					return m, func() tea.Msg { return OptionsDoneMsg{Minutes: mins, Justification: j} }
+				}
+			case "up":
+				if len(m.recentJusts) > 0 && m.recentCursor < len(m.recentJusts)-1 {
 					m.recentCursor++
 					m.justification = m.recentJusts[m.recentCursor]
 				}
-			}
-
-		case "down", "j":
-			if m.focusJust && m.recentCursor >= 0 {
-				m.recentCursor--
-				if m.recentCursor < 0 {
-					m.justification = ""
-				} else {
-					m.justification = m.recentJusts[m.recentCursor]
+			case "down":
+				if m.recentCursor >= 0 {
+					m.recentCursor--
+					if m.recentCursor < 0 {
+						m.justification = ""
+					} else {
+						m.justification = m.recentJusts[m.recentCursor]
+					}
+				}
+			case "backspace":
+				if len(m.justification) > 0 {
+					m.justification = m.justification[:len(m.justification)-1]
+					m.recentCursor = -1
+				}
+			default:
+				if msg.Text != "" {
+					m.justification += msg.Text
+					m.recentCursor = -1
 				}
 			}
+			// Return a no-op cmd to signal this key was consumed so wizard/app
+			// do not also handle it (e.g. q for back, ? for help).
+			return m, func() tea.Msg { return nil }
+		}
 
-		case "backspace":
-			if m.focusJust && len(m.justification) > 0 {
-				m.justification = m.justification[:len(m.justification)-1]
-				m.recentCursor = -1
+		// Duration grid mode (focusJust == false).
+		switch msg.String() {
+		case "tab":
+			m.focusJust = true
+			m.recentCursor = -1
+		case "enter":
+			m.focusJust = true
+		case "right", "l":
+			if m.durationIdx < len(durationChoices)-1 {
+				m.durationIdx++
 			}
-
-		case "space":
-			if m.focusJust {
-				m.justification += " "
-				m.recentCursor = -1
-			}
-
-		default:
-			if m.focusJust && len(msg.String()) == 1 {
-				m.justification += msg.String()
-				m.recentCursor = -1
+		case "left", "h":
+			if m.durationIdx > 0 {
+				m.durationIdx--
 			}
 		}
 	}
@@ -161,10 +157,12 @@ func (m Options) Update(msg tea.Msg) (Options, tea.Cmd) {
 func (m Options) View() string {
 	var sb strings.Builder
 
-	// Duration row (split into two rows of 8 to fit terminal width)
+	// Duration rows: split choices evenly into two rows
 	sb.WriteString(m.theme.Title.Render("Duration:") + "\n")
+	perRow := (len(durationChoices) + 1) / 2
 	for row := 0; row < 2; row++ {
-		start, end := row*8, row*8+8
+		start := row * perRow
+		end := min(start+perRow, len(durationChoices))
 		for i := start; i < end; i++ {
 			if i > start {
 				sb.WriteString("  ")

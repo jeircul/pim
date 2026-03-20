@@ -211,8 +211,8 @@ func (c *Client) GetEligibleRoles() ([]Role, error) {
 	return roles, nil
 }
 
-// GetActiveAssignments fetches all active PIM assignments for the given principal.
-func (c *Client) GetActiveAssignments(principalID string) ([]ActiveAssignment, error) {
+// GetActiveAssignments fetches all active PIM assignments for the calling user.
+func (c *Client) GetActiveAssignments() ([]ActiveAssignment, error) {
 	if err := c.ensureTokens(); err != nil {
 		return nil, err
 	}
@@ -279,7 +279,7 @@ func (c *Client) isRoleActiveAt(scope, roleDefinitionID, principalID string) (bo
 
 	resp, err := c.doRequest(http.MethodGet, reqURL, c.armToken, nil)
 	if err != nil {
-		if strings.Contains(err.Error(), "HTTP 500") {
+		if strings.Contains(err.Error(), "HTTP 500") || strings.Contains(err.Error(), "HTTP 400") {
 			return false, nil
 		}
 		return false, fmt.Errorf("check active status: %w", err)
@@ -316,13 +316,21 @@ func (c *Client) ActivateRole(role Role, principalID, justification string, minu
 		requestType = "SelfExtend"
 	}
 
+	// Omit the eligibility schedule link when activating at a narrower scope
+	// than the eligibility (e.g. sub-scoped eligibility, RG-scoped activation).
+	// Azure rejects a subscription-scoped schedule ID on an RG-scoped request.
+	linkedID := role.EligibilityScheduleID
+	if targetScope != "" && targetScope != role.Scope {
+		linkedID = ""
+	}
+
 	req := ScheduleRequest{
 		Properties: ScheduleProperties{
 			PrincipalID:                     principalID,
 			RoleDefinitionID:                role.RoleDefinitionID,
 			RequestType:                     requestType,
 			Justification:                   justification,
-			LinkedRoleEligibilityScheduleID: role.EligibilityScheduleID,
+			LinkedRoleEligibilityScheduleID: linkedID,
 			ScheduleInfo: &ScheduleInfo{
 				StartDateTime: time.Now().UTC().Format(time.RFC3339),
 				Expiration: Expiration{
@@ -473,15 +481,19 @@ func (c *Client) ListSubscriptionResourceGroups(subscriptionID string) ([]Resour
 	return out, nil
 }
 
-func (c *Client) fetchEligibleChildResources(mgID string) ([]childResource, error) {
-	reqURL := fmt.Sprintf("%s/providers/Microsoft.Management/managementGroups/%s/providers/Microsoft.Authorization/eligibleChildResources?api-version=%s&getAllChildren=true",
-		armEndpoint, url.PathEscape(mgID), eligibleChildResourcesAPIVersion)
+// fetchEligibleChildResources fetches PIM-eligible child resources under any
+// ARM scope (management group or subscription). scope must be the full ARM
+// scope path, e.g. "/providers/Microsoft.Management/managementGroups/{id}"
+// or "/subscriptions/{id}".
+func (c *Client) fetchEligibleChildResources(scope string) ([]childResource, error) {
+	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/eligibleChildResources?api-version=%s",
+		armEndpoint, scope, eligibleChildResourcesAPIVersion)
 
 	var out []childResource
 	for reqURL != "" {
 		resp, err := c.doRequest(http.MethodGet, reqURL, c.armToken, nil)
 		if err != nil {
-			return nil, fmt.Errorf("eligible child resources for %s: %w", mgID, err)
+			return nil, fmt.Errorf("eligible child resources for %s: %w", scope, err)
 		}
 		var result struct {
 			Value    []childResource `json:"value"`
@@ -499,7 +511,8 @@ func (c *Client) fetchEligibleChildResources(mgID string) ([]childResource, erro
 }
 
 func (c *Client) listEligibleChildSubscriptions(mgID string) ([]Subscription, error) {
-	resources, err := c.fetchEligibleChildResources(mgID)
+	scope := fmt.Sprintf("/providers/Microsoft.Management/managementGroups/%s", url.PathEscape(mgID))
+	resources, err := c.fetchEligibleChildResources(scope)
 	if err != nil {
 		return nil, err
 	}
@@ -513,6 +526,35 @@ func (c *Client) listEligibleChildSubscriptions(mgID string) ([]Subscription, er
 			continue
 		}
 		out = append(out, Subscription{ID: subID, DisplayName: item.Name})
+	}
+	return out, nil
+}
+
+// ListEligibleResourceGroups lists resource groups the caller is eligible to
+// manage via PIM under the given subscription. Uses the PIM
+// eligibleChildResources API so it works before any RBAC is granted.
+func (c *Client) ListEligibleResourceGroups(subscriptionID string) ([]ResourceGroup, error) {
+	if err := c.ensureTokens(); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(subscriptionID) == "" {
+		return nil, fmt.Errorf("subscription id cannot be empty")
+	}
+	scope := "/subscriptions/" + subscriptionID
+	resources, err := c.fetchEligibleChildResources(scope)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ResourceGroup, 0, len(resources))
+	for _, item := range resources {
+		if !strings.Contains(strings.ToLower(item.Type), "resourcegroup") {
+			continue
+		}
+		_, name := ResourceGroupNameFromScope(item.ID)
+		if name == "" {
+			continue
+		}
+		out = append(out, ResourceGroup{SubscriptionID: subscriptionID, Name: name, ID: item.ID})
 	}
 	return out, nil
 }

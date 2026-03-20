@@ -78,10 +78,3 @@ func padRight(s string, n int) string {
 	}
 	return s + strings.Repeat(" ", n-len(s))
 }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

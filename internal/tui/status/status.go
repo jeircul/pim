@@ -93,6 +93,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.cursor++
 			}
 		case key.Matches(msg, m.keys.Refresh):
+			if m.loadFunc == nil {
+				break
+			}
 			m.loading = true
 			return m, tea.Batch(
 				m.spinner.Init(),

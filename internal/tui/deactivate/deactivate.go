@@ -11,8 +11,15 @@ import (
 	"github.com/jeircul/pim/internal/tui/styles"
 )
 
+// Result holds the outcome of a single deactivation.
+type Result struct {
+	RoleName string
+	Scope    string
+	Err      error
+}
+
 // DoneMsg is sent when deactivation completes (success or partial failure).
-type DoneMsg struct{ Errors []error }
+type DoneMsg struct{ Results []Result }
 
 // CancelMsg is sent when the user cancels.
 type CancelMsg struct{}
@@ -120,8 +127,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.items[msg.idx].err = msg.err
 		}
 		if m.allDone() {
-			errs := m.collectErrors()
-			return m, func() tea.Msg { return DoneMsg{Errors: errs} }
+			results := m.collectResults()
+			return m, func() tea.Msg { return DoneMsg{Results: results} }
 		}
 
 	case tea.KeyPressMsg:
@@ -205,14 +212,16 @@ func (m *Model) allDone() bool {
 	return true
 }
 
-func (m *Model) collectErrors() []error {
-	var errs []error
+func (m *Model) collectResults() []Result {
+	results := make([]Result, 0, len(m.items))
 	for _, it := range m.items {
-		if it.err != nil {
-			errs = append(errs, it.err)
-		}
+		results = append(results, Result{
+			RoleName: it.assignment.RoleName,
+			Scope:    it.assignment.ScopeDisplay,
+			Err:      it.err,
+		})
 	}
-	return errs
+	return results
 }
 
 func (m *Model) countSelected() int {

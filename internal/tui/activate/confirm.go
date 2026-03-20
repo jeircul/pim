@@ -11,9 +11,16 @@ import (
 	"github.com/jeircul/pim/internal/tui/styles"
 )
 
+// Result holds the outcome of a single activation or deactivation.
+type Result struct {
+	RoleName string
+	Scope    string
+	Err      error
+}
+
 // ConfirmDoneMsg is sent when all activations have completed (success or partial failure).
 type ConfirmDoneMsg struct {
-	Errors []error
+	Results []Result
 }
 
 // activationItem tracks one activation's state.
@@ -93,8 +100,8 @@ func (m Confirm) Update(msg tea.Msg) (Confirm, tea.Cmd) {
 			m.items[msg.idx].status = statusDone
 		}
 		if m.allDone() {
-			errs := m.collectErrors()
-			return m, func() tea.Msg { return ConfirmDoneMsg{Errors: errs} }
+			results := m.collectResults()
+			return m, func() tea.Msg { return ConfirmDoneMsg{Results: results} }
 		}
 
 	case tea.KeyPressMsg:
@@ -148,14 +155,20 @@ func (m *Confirm) allDone() bool {
 	return true
 }
 
-func (m *Confirm) collectErrors() []error {
-	var errs []error
+func (m *Confirm) collectResults() []Result {
+	results := make([]Result, 0, len(m.items))
 	for _, it := range m.items {
-		if it.err != nil {
-			errs = append(errs, it.err)
+		scope := it.targetScope
+		if scope == "" {
+			scope = it.role.Scope
 		}
+		results = append(results, Result{
+			RoleName: it.role.RoleName,
+			Scope:    scope,
+			Err:      it.err,
+		})
 	}
-	return errs
+	return results
 }
 
 // View renders the confirm step.

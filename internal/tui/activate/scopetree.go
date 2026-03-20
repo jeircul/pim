@@ -6,6 +6,7 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/jeircul/pim/internal/azure"
 	"github.com/jeircul/pim/internal/tui/components"
 	"github.com/jeircul/pim/internal/tui/styles"
@@ -27,6 +28,7 @@ type scopeNode struct {
 	expanded bool
 	loading  bool
 	loaded   bool
+	loadErr  error
 	parent   *scopeNode
 }
 
@@ -165,27 +167,29 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 			break
 		}
 		n.loading = false
+		if msg.err != nil {
+			n.loadErr = msg.err
+			break
+		}
 		n.loaded = true
 		n.expanded = true
-		if msg.err == nil {
-			for _, s := range msg.subs {
-				n.children = append(n.children, &scopeNode{
-					id:      s.ID,
-					display: s.DisplayName,
-					kind:    azure.ScopeSubscription,
-					scope:   s.Scope(),
-					parent:  n,
-				})
-			}
-			for _, rg := range msg.rgs {
-				n.children = append(n.children, &scopeNode{
-					id:      rg.Name,
-					display: rg.Name,
-					kind:    azure.ScopeResourceGroup,
-					scope:   rg.Scope(),
-					parent:  n,
-				})
-			}
+		for _, s := range msg.subs {
+			n.children = append(n.children, &scopeNode{
+				id:      s.ID,
+				display: s.DisplayName,
+				kind:    azure.ScopeSubscription,
+				scope:   s.Scope(),
+				parent:  n,
+			})
+		}
+		for _, rg := range msg.rgs {
+			n.children = append(n.children, &scopeNode{
+				id:      rg.Name,
+				display: rg.Name,
+				kind:    azure.ScopeResourceGroup,
+				scope:   rg.Scope(),
+				parent:  n,
+			})
 		}
 		m.flatten()
 
@@ -207,6 +211,10 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 				}
 				// MG nodes and subscription nodes (when sub is root) can be expanded.
 				if n.kind == azure.ScopeManagementGroup || (n.kind == azure.ScopeSubscription && n != m.root) || m.subRoot {
+					if n.loadErr != nil {
+						// Clear the previous error so expandNode will retry.
+						n.loadErr = nil
+					}
 					if n.loaded {
 						n.expanded = true
 						m.flatten()
@@ -234,8 +242,16 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 			}
 		case msg.String() == "space":
 			if m.cursor < len(m.flat) {
-				scope := m.flat[m.cursor].scope
-				m.selected[scope] = !m.selected[scope]
+				n := m.flat[m.cursor]
+				if n.loadErr != nil {
+					break
+				}
+				scope := n.scope
+				if m.selected[scope] {
+					delete(m.selected, scope)
+				} else {
+					m.selected[scope] = true
+				}
 			}
 		case key.Matches(msg, m.keys.Enter):
 			if len(m.selected) > 0 {
@@ -309,6 +325,8 @@ func (m ScopeTree) View() string {
 		switch {
 		case n.loading:
 			prefix = m.spinner.View() + " "
+		case n.loadErr != nil:
+			prefix = "✗ "
 		case n.kind == azure.ScopeResourceGroup:
 			prefix = "  "
 		case n.expanded:
@@ -324,6 +342,10 @@ func (m ScopeTree) View() string {
 
 		line := cursor + indent + prefix + check + n.display
 		sb.WriteString(line + "\n")
+		if n.loadErr != nil {
+			errStyle := lipgloss.NewStyle().Foreground(m.theme.Danger)
+			sb.WriteString(indent + "  " + errStyle.Render("  "+n.loadErr.Error()) + "\n")
+		}
 	}
 
 	sb.WriteString("\n")

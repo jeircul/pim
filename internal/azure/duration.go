@@ -70,6 +70,9 @@ func countDigits(n int) int {
 	if n == 0 {
 		return 1
 	}
+	if n < 0 {
+		n = -n
+	}
 	c := 0
 	for n > 0 {
 		n /= 10

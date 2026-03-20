@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/jeircul/pim/internal/app"
@@ -31,7 +32,7 @@ func Run(ctx context.Context, a *app.App) error {
 }
 
 func runStatus(ctx context.Context, a *app.App, user *azure.User) error {
-	assignments, err := a.Client.GetActiveAssignments(user.ID)
+	assignments, err := a.Client.GetActiveAssignments()
 	if err != nil {
 		return fmt.Errorf("get active assignments: %w", err)
 	}
@@ -54,7 +55,7 @@ func runStatus(ctx context.Context, a *app.App, user *azure.User) error {
 }
 
 func runDeactivate(ctx context.Context, a *app.App, user *azure.User) error {
-	assignments, err := a.Client.GetActiveAssignments(user.ID)
+	assignments, err := a.Client.GetActiveAssignments()
 	if err != nil {
 		return fmt.Errorf("get active assignments: %w", err)
 	}
@@ -108,7 +109,8 @@ func runActivate(ctx context.Context, a *app.App, user *azure.User) error {
 	}
 
 	if lastErr != nil {
-		return a.Store.SaveState()
+		_ = a.Store.SaveState()
+		return lastErr
 	}
 
 	a.Store.AddRecentJustification(cfg.Justification)
@@ -154,37 +156,9 @@ func matchesAny(s string, filters []string) bool {
 	if len(filters) == 0 {
 		return true
 	}
-	sl := toLower(s)
+	sl := strings.ToLower(s)
 	for _, f := range filters {
-		if contains(sl, toLower(f)) {
-			return true
-		}
-	}
-	return false
-}
-
-func toLower(s string) string {
-	b := make([]byte, len(s))
-	for i := range s {
-		c := s[i]
-		if c >= 'A' && c <= 'Z' {
-			c += 32
-		}
-		b[i] = c
-	}
-	return string(b)
-}
-
-func contains(s, sub string) bool {
-	if sub == "" {
-		return true
-	}
-	return len(s) >= len(sub) && (s == sub || len(s) > 0 && containsStr(s, sub))
-}
-
-func containsStr(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
+		if strings.Contains(sl, strings.ToLower(f)) {
 			return true
 		}
 	}

@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -16,6 +18,11 @@ import (
 	"github.com/jeircul/pim/internal/tui/favorites"
 	"github.com/jeircul/pim/internal/tui/status"
 )
+
+// ErrSilent is returned by Run when activation or deactivation completed with
+// failures that were already printed to stdout. The caller should exit 1
+// without printing the error again.
+var ErrSilent = errors.New("silent")
 
 // Screen identifies which screen is active.
 type Screen int
@@ -60,6 +67,8 @@ type AppModel struct {
 	height          int
 	isDark          bool
 	showHelp        bool
+	exitSummary     string
+	exitErr         error
 }
 
 // userReadyMsg carries the resolved principal ID from the background user fetch.
@@ -74,9 +83,6 @@ func New(a *app.App) (AppModel, error) {
 	theme := NewTheme(true)
 
 	dash := dashboard.New(theme, keys, a.Store)
-
-	stat := status.New(theme, keys, nil) // loadFunc set after principalID resolves
-
 	favs := favorites.New(theme, keys, a.Store)
 
 	return AppModel{
@@ -85,7 +91,6 @@ func New(a *app.App) (AppModel, error) {
 		keys:           keys,
 		screen:         ScreenDashboard,
 		dashboardModel: dash,
-		statusModel:    stat,
 		favoritesModel: favs,
 	}, nil
 }
@@ -126,19 +131,6 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.principalID = msg.principalID
-		client := m.a.Client
-		pid := m.principalID
-		m.statusModel = status.New(m.theme, m.keys, func() ([]azure.ActiveAssignment, []azure.Role, error) {
-			active, err := client.GetActiveAssignments(pid)
-			if err != nil {
-				return nil, nil, err
-			}
-			eligible, err := client.GetEligibleRoles()
-			if err != nil {
-				return nil, nil, err
-			}
-			return active, eligible, nil
-		})
 		// If a headless command was pending, dispatch it now.
 		switch m.a.Config.Command {
 		case app.CmdActivate:
@@ -146,8 +138,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case app.CmdDeactivate:
 			return m, m.startDeactivate()
 		case app.CmdStatus:
-			m.screen = ScreenStatus
-			return m, m.statusModel.Init()
+			return m, m.startStatus()
 		}
 		return m, nil
 
@@ -158,8 +149,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Activation wizard results.
 	case activate.WizardDoneMsg:
-		m.screen = ScreenDashboard
-		return m, m.dashboardModel.Init()
+		m.exitSummary, m.exitErr = buildActivationSummary(msg.Results)
+		return m, tea.Quit
 
 	case activate.WizardCancelMsg:
 		m.screen = ScreenDashboard
@@ -167,8 +158,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Deactivation results.
 	case deactivate.DoneMsg:
-		m.screen = ScreenDashboard
-		return m, m.dashboardModel.Init()
+		m.exitSummary, m.exitErr = buildDeactivationSummary(msg.Results)
+		return m, tea.Quit
 
 	case deactivate.CancelMsg:
 		m.screen = ScreenDashboard
@@ -188,10 +179,6 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.startWizard(msg.Favorite)
 
 	case tea.KeyPressMsg:
-		if msg.String() == "?" {
-			m.showHelp = !m.showHelp
-			return m, nil
-		}
 		if m.showHelp {
 			m.showHelp = false
 			return m, nil
@@ -201,8 +188,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.screen == ScreenDashboard {
 			switch {
 			case msg.String() == "s":
-				m.screen = ScreenStatus
-				return m, m.statusModel.Init()
+				return m, m.startStatus()
 			case key.Matches(msg, m.keys.Deactivate):
 				return m, m.startDeactivate()
 			case msg.String() == "f":
@@ -226,7 +212,31 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		m.dashboardModel, cmd = m.dashboardModel.Update(msg)
 	}
+	// Toggle help only if the active screen did not consume the key.
+	if cmd == nil {
+		if kp, ok := msg.(tea.KeyPressMsg); ok && kp.String() == "?" {
+			m.showHelp = !m.showHelp
+		}
+	}
 	return m, cmd
+}
+
+// startStatus constructs a fresh status model and switches to that screen.
+func (m *AppModel) startStatus() tea.Cmd {
+	client := m.a.Client
+	m.statusModel = status.New(m.theme, m.keys, func() ([]azure.ActiveAssignment, []azure.Role, error) {
+		active, err := client.GetActiveAssignments()
+		if err != nil {
+			return nil, nil, err
+		}
+		eligible, err := client.GetEligibleRoles()
+		if err != nil {
+			return nil, nil, err
+		}
+		return active, eligible, nil
+	})
+	m.screen = ScreenStatus
+	return m.statusModel.Init()
 }
 
 // startWizard builds the Wizard deps and switches to the activate screen.
@@ -270,7 +280,7 @@ func (m *AppModel) startWizard(fav *state.Favorite) tea.Cmd {
 			return client.ListManagementGroupSubscriptions(mgID)
 		},
 		LoadRGs: func(subID string) ([]azure.ResourceGroup, error) {
-			return client.ListSubscriptionResourceGroups(subID)
+			return client.ListEligibleResourceGroups(subID)
 		},
 		Activate: func(role azure.Role, pid, justification string, minutes int, targetScope string) error {
 			_, err := client.ActivateRole(role, pid, justification, minutes, targetScope)
@@ -293,7 +303,7 @@ func (m *AppModel) startDeactivate() tea.Cmd {
 		m.keys,
 		principalID,
 		func() ([]azure.ActiveAssignment, error) {
-			return client.GetActiveAssignments(principalID)
+			return client.GetActiveAssignments()
 		},
 		func(assignment azure.ActiveAssignment, pid string) error {
 			_, err := client.DeactivateRole(assignment, pid)
@@ -359,6 +369,47 @@ func Run(a *app.App) error {
 		return err
 	}
 	p := tea.NewProgram(model)
-	_, err = p.Run()
-	return err
+	final, err := p.Run()
+	if err != nil {
+		return err
+	}
+	if m, ok := final.(AppModel); ok && m.exitSummary != "" {
+		fmt.Print(m.exitSummary)
+		if m.exitErr != nil {
+			return ErrSilent
+		}
+		return nil
+	}
+	return nil
+}
+
+// buildActivationSummary formats per-item activation results for stdout.
+// Returns the summary string and a combined error if any item failed.
+func buildActivationSummary(results []activate.Result) (string, error) {
+	var sb strings.Builder
+	var errs []error
+	for _, r := range results {
+		if r.Err != nil {
+			fmt.Fprintf(&sb, "failed:  %s @ %s — %v\n", r.RoleName, r.Scope, r.Err)
+			errs = append(errs, r.Err)
+		} else {
+			fmt.Fprintf(&sb, "activated: %s @ %s\n", r.RoleName, r.Scope)
+		}
+	}
+	return sb.String(), errors.Join(errs...)
+}
+
+// buildDeactivationSummary formats per-item deactivation results for stdout.
+func buildDeactivationSummary(results []deactivate.Result) (string, error) {
+	var sb strings.Builder
+	var errs []error
+	for _, r := range results {
+		if r.Err != nil {
+			fmt.Fprintf(&sb, "failed:      %s @ %s — %v\n", r.RoleName, r.Scope, r.Err)
+			errs = append(errs, r.Err)
+		} else {
+			fmt.Fprintf(&sb, "deactivated: %s @ %s\n", r.RoleName, r.Scope)
+		}
+	}
+	return sb.String(), errors.Join(errs...)
 }

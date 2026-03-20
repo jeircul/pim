@@ -12,7 +12,7 @@ import (
 
 // WizardDoneMsg is sent to the root model when the wizard has finished.
 type WizardDoneMsg struct {
-	Errors []error
+	Results []Result
 }
 
 // WizardCancelMsg is sent when the user cancels the wizard.
@@ -121,7 +121,7 @@ func (w Wizard) Update(msg tea.Msg) (Wizard, tea.Cmd) {
 		return w.startConfirm(msg.Minutes, msg.Justification)
 
 	case ConfirmDoneMsg:
-		done := WizardDoneMsg{Errors: msg.Errors}
+		done := WizardDoneMsg{Results: msg.Results}
 		return w, func() tea.Msg { return done }
 
 	case autoConfirmMsg:
