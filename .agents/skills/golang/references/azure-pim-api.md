@@ -147,7 +147,7 @@ A user with eligibility at a **management group** can activate at a narrower chi
 
 **Critical rule:** `linkedRoleEligibilityScheduleId` must always be the **full ARM resource
 path** as returned by the `roleEligibilitySchedules` API. Stripping it to a bare GUID causes
-HTTP 403 `AuthorizationFailed` at the child scope.
+HTTP 400 or HTTP 403 at the child scope.
 
 ### Why not re-query eligibility at the child scope?
 
@@ -155,6 +155,11 @@ HTTP 403 `AuthorizationFailed` at the child scope.
 **only eligibilities defined directly at that scope** — inherited MG-level eligibilities are
 not returned. Always use the tenant-wide `roleEligibilitySchedules?$filter=asTarget()` call
 and pass the resulting `id` through unchanged.
+
+> **Limitation**: RG-scope activation fails with HTTP 403 for MG-inherited eligibilities
+> when the user lacks `resourceGroups/read` at the target RG — a chicken-and-egg since that
+> permission is only granted after activation. The client automatically falls back to
+> subscription scope. See section 8.
 
 ---
 
@@ -192,3 +197,60 @@ resourceGroupsAPIVersion               = "2021-04-01"   // ARM resourceGroups li
 armEndpoint                            = "https://management.azure.com"
 graphEndpoint                          = "https://graph.microsoft.com/v1.0"
 ```
+
+---
+
+## 8. RG-scope activation limitation and subscription fallback
+
+Azure enforces `Microsoft.Resources/subscriptions/resourceGroups/read` at the target RG
+scope **before** processing any PIM `roleAssignmentScheduleRequests` PUT. Since that
+permission is only granted after activation, RG-scope activation of MG-inherited
+eligibilities is impossible without a pre-existing assignment.
+
+### Symptoms
+
+| Request | Response | Meaning |
+|---|---|---|
+| PUT `{rgScope}/…/roleAssignmentScheduleRequests/{uuid}` | **HTTP 403 AuthorizationFailed** | Azure scope pre-check fails |
+| GET `{rgScope}/…/roleAssignmentSchedules` | **HTTP 500** | No read access; `isRoleActiveAt` swallows this as "not active" — expected |
+
+### Fallback pattern (implemented in `ActivateRole`)
+
+When the RG-scope PUT returns HTTP 403 `AuthorizationFailed`, `ActivateRole` automatically
+retries at the parent subscription scope:
+
+```
+1. Detect:  IsResourceGroupScope(scopePath) && isAuthorizationError(err)
+2. Extract: subID := SubscriptionIDFromScope(rgScope)
+3. Retry:   PUT /subscriptions/{subID}/providers/Microsoft.Authorization/
+               roleAssignmentScheduleRequests/{new-uuid}
+```
+
+The retry uses the same request body — in particular the same MG-level
+`linkedRoleEligibilityScheduleId`. Azure accepts this and activates the role at
+subscription scope rather than the narrower RG.
+
+### Confirmed via curl (March 2026, Omnia-Classic-QA / Q912-log)
+
+```bash
+# RG scope → 403
+curl -X PUT ".../resourceGroups/Q912-log/providers/Microsoft.Authorization/
+  roleAssignmentScheduleRequests/{uuid}?api-version=2020-10-01" ...
+# {"error":{"code":"AuthorizationFailed","message":"does not have authorization to
+#  perform action 'Microsoft.Resources/subscriptions/resourceGroups/read' ..."}}
+# HTTP 403
+
+# Subscription scope → 201
+curl -X PUT ".../subscriptions/30cfbf5f-.../providers/Microsoft.Authorization/
+  roleAssignmentScheduleRequests/{uuid}?api-version=2020-10-01" ...
+# {"properties":{"status":"Provisioned",...}}
+# HTTP 201
+```
+
+### What was tried and did NOT work
+
+| Approach | Result |
+|---|---|
+| Bare GUID for `linkedRoleEligibilityScheduleId` | HTTP 400 |
+| Re-query `roleEligibilityScheduleInstances` at child scope | Returns empty — inherited MG eligibilities not visible |
+| Keep full ARM path for `linkedRoleEligibilityScheduleId` (correct) but PUT at RG scope | HTTP 403 (Azure pre-check, not a request body issue) |
