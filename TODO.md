@@ -16,9 +16,17 @@ Items to resolve before merging `rewrite/v2` → `main`.
   the text field. Fixed: `↑`/`↓` now works from the duration grid too and auto-switches
   focus to the justification field on first press.
 
----
+- [ ] **Deactivation summary shows all roles, not just selected ones** (`internal/tui/deactivate/deactivate.go`)
+  `collectResults()` iterates over all items regardless of the `selected` field, so every
+  unselected assignment appears as `"deactivated: ..."` in the exit summary even though it
+  was never touched. Fix: skip items where `!it.selected` in `collectResults`.
 
-## Testing
+- [ ] **Headless deactivate has no safety gate** (`internal/headless/run.go`)
+  `pim deactivate --headless` with no `--role`/`--scope` flags calls `filterAssignments`
+  which returns all active assignments when both filter slices are empty — silently
+  deactivating every active PIM elevation with no confirmation. Unlike activation,
+  deactivation has zero required flags and no `--yes` check. Fix: either require at least
+  one filter flag, or honour `--yes` as an explicit "deactivate all" gate.
 
 ### Headless path (`internal/headless/run.go`)
 
