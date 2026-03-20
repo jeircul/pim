@@ -26,11 +26,13 @@ var logo = []string{
 
 // Model is the landing screen model. It loads no data on startup.
 type Model struct {
-	theme  styles.Theme
-	keys   styles.KeyMap
-	store  *state.Store
-	width  int
-	height int
+	theme     styles.Theme
+	keys      styles.KeyMap
+	store     *state.Store
+	userReady bool
+	authErr   string
+	width     int
+	height    int
 }
 
 // New creates a new landing screen Model.
@@ -41,6 +43,13 @@ func New(theme styles.Theme, keys styles.KeyMap, store *state.Store) Model {
 		store: store,
 	}
 }
+
+// SetReady marks the model as ready (user identity resolved) and clears any
+// auth error. Call this when userReadyMsg arrives without an error.
+func (m *Model) SetReady() { m.userReady = true; m.authErr = "" }
+
+// SetAuthErr records an authentication failure message to display.
+func (m *Model) SetAuthErr(msg string) { m.authErr = msg }
 
 // Init is a no-op — the landing screen loads no data.
 func (m Model) Init() tea.Cmd { return nil }
@@ -102,13 +111,21 @@ func (m Model) View() string {
 		sb.WriteString("\n")
 	}
 
+	if m.authErr != "" {
+		sb.WriteString(lipgloss.NewStyle().Foreground(m.theme.Danger).Render(m.authErr) + "\n\n")
+	}
+
 	hints := []key.Binding{
 		m.keys.Activate,
 		m.keys.Status,
 		m.keys.Deactivate,
 		m.keys.Quit,
 	}
-	sb.WriteString(components.RenderStatusBar(m.theme.HelpKey, m.theme.HelpDesc, m.theme.Subtle, hints, ""))
+	extra := ""
+	if !m.userReady {
+		extra = "resolving identity…"
+	}
+	sb.WriteString(components.RenderStatusBar(m.theme.HelpKey, m.theme.HelpDesc, m.theme.Subtle, hints, extra))
 
 	return sb.String()
 }

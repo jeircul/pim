@@ -147,6 +147,24 @@ func (m Options) Update(msg tea.Msg) (Options, tea.Cmd) {
 			if m.durationIdx > 0 {
 				m.durationIdx--
 			}
+		case "up":
+			if len(m.recentJusts) > 0 {
+				m.focusJust = true
+				if m.recentCursor < len(m.recentJusts)-1 {
+					m.recentCursor++
+					m.justification = m.recentJusts[m.recentCursor]
+				}
+			}
+		case "down":
+			if m.recentCursor >= 0 {
+				m.focusJust = true
+				m.recentCursor--
+				if m.recentCursor < 0 {
+					m.justification = ""
+				} else {
+					m.justification = m.recentJusts[m.recentCursor]
+				}
+			}
 		}
 	}
 

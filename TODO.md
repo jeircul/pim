@@ -6,10 +6,15 @@ Items to resolve before merging `rewrite/v2` → `main`.
 
 ## Bugs
 
-- [ ] **Justification selection broken** (`internal/tui/activate/options.go`)
-  Recent justifications are displayed in the wizard options step but cannot be
-  selected — the list items are not interactive. User must retype the justification
-  every time.
+- [x] **Early keypress quits app** (`internal/tui/app.go`, `internal/tui/dashboard/dashboard.go`)
+  Pressing `a` or `D` before `GetCurrentUser()` resolves killed the app with an error.
+  Fixed: `userReady` guard swallows those actions until identity is resolved; auth errors
+  are surfaced in the dashboard instead of silently dropped.
+
+- [x] **Justification selection broken** (`internal/tui/activate/options.go`)
+  `↑`/`↓` navigation in the recent-justifications list only worked after tabbing into
+  the text field. Fixed: `↑`/`↓` now works from the duration grid too and auto-switches
+  focus to the justification field on first press.
 
 ---
 

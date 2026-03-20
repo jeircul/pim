@@ -63,6 +63,7 @@ type AppModel struct {
 	deactivateModel deactivate.Model
 	favoritesModel  favorites.Model
 	principalID     string
+	userReady       bool
 	width           int
 	height          int
 	isDark          bool
@@ -127,10 +128,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case userReadyMsg:
 		if msg.err != nil {
-			// Non-fatal: show error on dashboard and let user retry.
+			m.dashboardModel.SetAuthErr(fmt.Sprintf("auth: %v", msg.err))
 			return m, nil
 		}
 		m.principalID = msg.principalID
+		m.userReady = true
+		m.dashboardModel.SetReady()
 		// If a headless command was pending, dispatch it now.
 		switch m.a.Config.Command {
 		case app.CmdActivate:
@@ -176,6 +179,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Dashboard activation shortcut.
 	case dashboard.ActivateMsg:
+		if !m.userReady {
+			return m, nil
+		}
 		return m, m.startWizard(msg.Favorite)
 
 	case tea.KeyPressMsg:
@@ -190,6 +196,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case msg.String() == "s":
 				return m, m.startStatus()
 			case key.Matches(msg, m.keys.Deactivate):
+				if !m.userReady {
+					return m, nil
+				}
 				return m, m.startDeactivate()
 			case msg.String() == "f":
 				m.screen = ScreenFavorites
