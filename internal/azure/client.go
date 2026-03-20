@@ -269,6 +269,41 @@ func (c *Client) IsRoleActive(role Role, principalID string) (bool, error) {
 	return c.isRoleActiveAt(role.Scope, role.RoleDefinitionID, principalID)
 }
 
+// eligibilityScheduleIDAt fetches the roleEligibilityScheduleId for the given
+// role definition at the target scope. Used for scoped-down activation where
+// the eligibility is inherited from a broader scope (e.g. sub → RG).
+func (c *Client) eligibilityScheduleIDAt(scope, roleDefinitionID string) (string, error) {
+	if err := c.ensureTokens(); err != nil {
+		return "", err
+	}
+	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/roleEligibilityScheduleInstances?api-version=%s&$filter=asTarget()",
+		armEndpoint, scope, apiVersion)
+
+	resp, err := c.doRequest(http.MethodGet, reqURL, c.armToken, nil)
+	if err != nil {
+		return "", fmt.Errorf("list eligibility instances: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Value []struct {
+			Properties struct {
+				RoleDefinitionID          string `json:"roleDefinitionId"`
+				RoleEligibilityScheduleID string `json:"roleEligibilityScheduleId"`
+			} `json:"properties"`
+		} `json:"value"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decode eligibility instances: %w", err)
+	}
+	for _, item := range result.Value {
+		if strings.EqualFold(item.Properties.RoleDefinitionID, roleDefinitionID) {
+			return item.Properties.RoleEligibilityScheduleID, nil
+		}
+	}
+	return "", fmt.Errorf("no eligibility found for role %s at scope %s", roleDefinitionID, scope)
+}
+
 func (c *Client) isRoleActiveAt(scope, roleDefinitionID, principalID string) (bool, error) {
 	if err := c.ensureTokens(); err != nil {
 		return false, err
@@ -316,12 +351,17 @@ func (c *Client) ActivateRole(role Role, principalID, justification string, minu
 		requestType = "SelfExtend"
 	}
 
-	// Omit the eligibility schedule link when activating at a narrower scope
-	// than the eligibility (e.g. sub-scoped eligibility, RG-scoped activation).
-	// Azure rejects a subscription-scoped schedule ID on an RG-scoped request.
+	// For scoped-down activation (e.g. sub-level eligibility, RG-level target),
+	// re-query the eligibility instance at the target scope to get an ID that
+	// matches the request URL scope. Azure rejects a subscription-scoped
+	// schedule ID on an RG-scoped request.
 	linkedID := role.EligibilityScheduleID
 	if targetScope != "" && targetScope != role.Scope {
-		linkedID = ""
+		resolved, err := c.eligibilityScheduleIDAt(scopePath, role.RoleDefinitionID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve eligibility at target scope: %w", err)
+		}
+		linkedID = resolved
 	}
 
 	req := ScheduleRequest{
