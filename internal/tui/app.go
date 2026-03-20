@@ -242,6 +242,11 @@ func (m *AppModel) startStatus() tea.Cmd {
 // startWizard builds the Wizard deps and switches to the activate screen.
 // fav may be nil (full wizard) or point to a pre-filled favorite.
 func (m *AppModel) startWizard(fav *state.Favorite) tea.Cmd {
+	if m.principalID == "" {
+		m.exitSummary = "error: user identity not yet resolved — please retry\n"
+		m.exitErr = errors.New("principal ID unavailable")
+		return tea.Quit
+	}
 	cfg := m.a.Config
 	principalID := m.principalID
 	client := m.a.Client
@@ -295,6 +300,11 @@ func (m *AppModel) startWizard(fav *state.Favorite) tea.Cmd {
 
 // startDeactivate constructs the deactivation model and switches to that screen.
 func (m *AppModel) startDeactivate() tea.Cmd {
+	if m.principalID == "" {
+		m.exitSummary = "error: user identity not yet resolved — please retry\n"
+		m.exitErr = errors.New("principal ID unavailable")
+		return tea.Quit
+	}
 	principalID := m.principalID
 	client := m.a.Client
 

@@ -316,21 +316,13 @@ func (c *Client) ActivateRole(role Role, principalID, justification string, minu
 		requestType = "SelfExtend"
 	}
 
-	// The API accepts a bare GUID for linkedRoleEligibilityScheduleId. Using
-	// just the GUID avoids scope mismatches when activating at a narrower scope
-	// than the eligibility (e.g. MG-level eligibility, RG-level activation).
-	linkedID := role.EligibilityScheduleID
-	if i := strings.LastIndex(linkedID, "/"); i >= 0 {
-		linkedID = linkedID[i+1:]
-	}
-
 	req := ScheduleRequest{
 		Properties: ScheduleProperties{
 			PrincipalID:                     principalID,
 			RoleDefinitionID:                role.RoleDefinitionID,
 			RequestType:                     requestType,
 			Justification:                   justification,
-			LinkedRoleEligibilityScheduleID: linkedID,
+			LinkedRoleEligibilityScheduleID: role.EligibilityScheduleID,
 			ScheduleInfo: &ScheduleInfo{
 				StartDateTime: time.Now().UTC().Format(time.RFC3339),
 				Expiration: Expiration{
@@ -352,6 +344,9 @@ func (c *Client) ActivateRole(role Role, principalID, justification string, minu
 
 	resp, err := c.doRequest(http.MethodPut, reqURL, c.armToken, bytes.NewReader(body))
 	if err != nil {
+		if IsResourceGroupScope(scopePath) && isAuthorizationError(err) {
+			return c.activateAtSubscriptionScope(req, scopePath)
+		}
 		return nil, fmt.Errorf("submit activation: %w", err)
 	}
 	defer resp.Body.Close()
@@ -361,6 +356,47 @@ func (c *Client) ActivateRole(role Role, principalID, justification string, minu
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 	return &schedResp, nil
+}
+
+// activateAtSubscriptionScope retries an activation request at subscription scope
+// when the RG-scope PUT fails with 403. Azure requires resourceGroups/read at the
+// target RG before it will process PIM requests there — a chicken-and-egg that makes
+// RG-scope activation impossible without a pre-existing assignment.
+func (c *Client) activateAtSubscriptionScope(req ScheduleRequest, rgScope string) (*ScheduleResponse, error) {
+	subID := SubscriptionIDFromScope(rgScope)
+	if subID == "" {
+		return nil, fmt.Errorf("submit activation: cannot determine subscription from RG scope %s", rgScope)
+	}
+	subScope := "/subscriptions/" + subID
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshal fallback request: %w", err)
+	}
+
+	requestID := uuid.New().String()
+	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/roleAssignmentScheduleRequests/%s?api-version=%s",
+		armEndpoint, subScope, requestID, apiVersion)
+
+	resp, err := c.doRequest(http.MethodPut, reqURL, c.armToken, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("submit activation at subscription scope: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var schedResp ScheduleResponse
+	if err := json.NewDecoder(resp.Body).Decode(&schedResp); err != nil {
+		return nil, fmt.Errorf("decode fallback response: %w", err)
+	}
+	return &schedResp, nil
+}
+
+func isAuthorizationError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "authorizationfailed") || strings.Contains(msg, "http 403")
 }
 
 // DeactivateRole submits a role deactivation request.

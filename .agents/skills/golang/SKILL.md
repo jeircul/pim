@@ -89,6 +89,7 @@ accent := ld(lipgloss.Color("#0066cc"), lipgloss.Color("#00ccff"))
 ## Azure client
 
 > Full patterns in `references/patterns.md`
+> Azure PIM REST API reference (endpoints, request bodies, scoped-down activation) in `references/azure-pim-api.md`
 
 ```go
 // Key signatures — memorise these:
