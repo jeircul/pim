@@ -22,7 +22,6 @@ const (
 	apiVersion                             = "2020-10-01"
 	managementGroupSubscriptionsAPIVersion = "2023-04-01"
 	eligibleChildResourcesAPIVersion       = "2020-10-01"
-	resourceGroupsAPIVersion               = "2021-04-01"
 	armEndpoint                            = "https://management.azure.com"
 	graphEndpoint                          = "https://graph.microsoft.com/v1.0"
 	httpTimeout                            = 30 * time.Second
@@ -472,45 +471,6 @@ func (c *Client) ListManagementGroupResourceGroups(mgID string) ([]ResourceGroup
 			continue
 		}
 		out = append(out, ResourceGroup{SubscriptionID: subID, Name: name, ID: item.ID})
-	}
-	return out, nil
-}
-
-// ListSubscriptionResourceGroups lists resource groups for a subscription.
-func (c *Client) ListSubscriptionResourceGroups(subscriptionID string) ([]ResourceGroup, error) {
-	tok, err := c.armToken()
-	if err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(subscriptionID) == "" {
-		return nil, fmt.Errorf("subscription id cannot be empty")
-	}
-
-	reqURL := fmt.Sprintf("%s/subscriptions/%s/resourceGroups?api-version=%s",
-		armEndpoint, subscriptionID, resourceGroupsAPIVersion)
-
-	var out []ResourceGroup
-	for reqURL != "" {
-		resp, err := c.doRequest(http.MethodGet, reqURL, tok, nil)
-		if err != nil {
-			return nil, fmt.Errorf("list resource groups for %s: %w", subscriptionID, err)
-		}
-		var result struct {
-			Value []struct {
-				ID   string `json:"id"`
-				Name string `json:"name"`
-			} `json:"value"`
-			NextLink string `json:"nextLink"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			resp.Body.Close()
-			return nil, fmt.Errorf("decode resource groups: %w", err)
-		}
-		resp.Body.Close()
-		for _, item := range result.Value {
-			out = append(out, ResourceGroup{SubscriptionID: subscriptionID, Name: item.Name, ID: item.ID})
-		}
-		reqURL = result.NextLink
 	}
 	return out, nil
 }

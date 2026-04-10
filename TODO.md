@@ -16,42 +16,20 @@ Items to resolve before merging `rewrite/v2` → `main`.
   the text field. Fixed: `↑`/`↓` now works from the duration grid too and auto-switches
   focus to the justification field on first press.
 
-- [ ] **Deactivation summary shows all roles, not just selected ones** (`internal/tui/deactivate/deactivate.go`)
-  `collectResults()` iterates over all items regardless of the `selected` field, so every
-  unselected assignment appears as `"deactivated: ..."` in the exit summary even though it
-  was never touched. Fix: skip items where `!it.selected` in `collectResults`.
+- [x] **Deactivation summary shows all roles, not just selected ones** (`internal/tui/deactivate/deactivate.go`)
+  `collectResults()` iterated over all items regardless of `selected`; fixed by skipping
+  items where `!it.selected` in `collectResults`.
 
-- [ ] **Headless deactivate has no safety gate** (`internal/headless/run.go`)
-  `pim deactivate --headless` with no `--role`/`--scope` flags calls `filterAssignments`
-  which returns all active assignments when both filter slices are empty — silently
-  deactivating every active PIM elevation with no confirmation. Unlike activation,
-  deactivation has zero required flags and no `--yes` check. Fix: either require at least
-  one filter flag, or honour `--yes` as an explicit "deactivate all" gate.
+- [x] **Headless deactivate has no safety gate** (`internal/headless/run.go`)
+  `pim deactivate --headless` with no `--role`/`--scope` flags silently deactivated
+  everything. Fixed: guard at top of `runDeactivate` requires at least one filter flag or
+  `--yes` to deactivate all.
 
 ### Headless path (`internal/headless/run.go`)
 
-Filter logic is tested (`filterRoles`, `filterAssignments`, `matchesAny`), but
-`runActivate`, `runDeactivate`, and `runStatus` have no test coverage.
-
-To test them, define a `ClientAPI` interface at the consumer (per conventions —
-interfaces at consumer, not implementer) and inject a mock.
-
-- [ ] **`runActivate`**
-  - Missing required flags (`--role`, `--scope`, `--time`, `--justification`) → error
-  - No matching roles for given filters → error
-  - Successful activation → prints confirmation, saves justification to state
-  - Partial failure (one role fails) → prints errors to stderr, returns last error
-  - RG-scoped target with 403 fallback → succeeds at subscription scope
-
-- [ ] **`runDeactivate`**
-  - No matching active assignments → prints "No matching active assignments."
-  - Successful deactivation → prints confirmation per role
-  - Deactivation error → prints to stderr, continues to next assignment
-
-- [ ] **`runStatus`**
-  - No active assignments → prints "No active PIM elevations."
-  - JSON output mode (`--output json`) → valid JSON array
-  - Table output → correct tab-aligned columns
+- [x] **`ClientAPI` interface + mock tests** — `runActivate`, `runDeactivate`, and `runStatus`
+  now have full table-driven test coverage via `ClientAPI` interface injection.
+  See `internal/headless/run_test.go`.
 
 ### Manual smoke test
 
@@ -73,5 +51,6 @@ prints `Activated: Reader @ /subscriptions/... for 1h`, exit 0.
 - [ ] **Bug #8**: Context stored at construction in `internal/azure/client.go` —
   should use request-scoped context passed per-call rather than stored at `NewClient` time.
 
-- [ ] **Dead code**: `ListSubscriptionResourceGroups` is no longer called from the TUI
-  path (replaced by `eligibleChildResources` API). Audit and remove if unused.
+- [x] **Dead code**: `ListSubscriptionResourceGroups` removed (was no longer called from
+  the TUI path; replaced by `eligibleChildResources` API). Constant `resourceGroupsAPIVersion`
+  also removed.
