@@ -1,6 +1,10 @@
 package azure
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
 
 const (
 	minMinutes = 30
@@ -33,50 +37,44 @@ func FormatDuration(minutes int) string {
 }
 
 // ParseDurationMinutes parses a human duration string (1h, 30m, 1h30m, 1.5h) into minutes.
+// Input is case-insensitive.
 func ParseDurationMinutes(s string) (int, error) {
 	if s == "" {
 		return 0, fmt.Errorf("empty duration")
 	}
+	s = strings.ToLower(strings.TrimSpace(s))
 
-	var hours, mins float64
-	var parsed bool
-
-	// Try "XhYm" or "Xh" or "Ym"
-	var h, m int
-	if n, _ := fmt.Sscanf(s, "%dh%dm", &h, &m); n == 2 {
-		return ClampMinutes(h*60 + m), nil
-	}
-	if n, _ := fmt.Sscanf(s, "%dh", &h); n == 1 && (len(s) == countDigits(h)+1) {
-		return ClampMinutes(h * 60), nil
-	}
-	if n, _ := fmt.Sscanf(s, "%dm", &m); n == 1 {
-		return ClampMinutes(m), nil
+	// "XhYm" — must end exactly after the 'm'
+	if hPart, rest, ok := strings.Cut(s, "h"); ok && strings.HasSuffix(rest, "m") {
+		mPart := strings.TrimSuffix(rest, "m")
+		// ensure mPart is all digits and non-empty (integer minutes)
+		if h, err := strconv.Atoi(hPart); err == nil {
+			if m, err := strconv.Atoi(mPart); err == nil {
+				return ClampMinutes(h*60 + m), nil
+			}
+		}
 	}
 
-	// Try "1.5h"
-	if n, _ := fmt.Sscanf(s, "%fh", &hours); n == 1 {
-		parsed = true
-		mins = hours * 60
+	// "Xh" — ends with h, prefix is an integer or float
+	if strings.HasSuffix(s, "h") {
+		numPart := strings.TrimSuffix(s, "h")
+		// integer hours
+		if h, err := strconv.Atoi(numPart); err == nil {
+			return ClampMinutes(h * 60), nil
+		}
+		// float hours (e.g. "1.5h")
+		if f, err := strconv.ParseFloat(numPart, 64); err == nil {
+			return ClampMinutes(int(f * 60)), nil
+		}
 	}
 
-	if !parsed {
-		return 0, fmt.Errorf("unrecognised duration %q; use 1h, 30m, 1h30m, or 1.5h", s)
+	// "Ym" — ends with m, prefix is an integer
+	if strings.HasSuffix(s, "m") {
+		numPart := strings.TrimSuffix(s, "m")
+		if m, err := strconv.Atoi(numPart); err == nil {
+			return ClampMinutes(m), nil
+		}
 	}
 
-	return ClampMinutes(int(mins)), nil
-}
-
-func countDigits(n int) int {
-	if n == 0 {
-		return 1
-	}
-	if n < 0 {
-		n = -n
-	}
-	c := 0
-	for n > 0 {
-		n /= 10
-		c++
-	}
-	return c
+	return 0, fmt.Errorf("unrecognised duration %q; use 1h, 30m, 1h30m, or 1.5h", s)
 }

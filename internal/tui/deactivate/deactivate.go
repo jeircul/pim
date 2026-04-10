@@ -213,8 +213,11 @@ func (m *Model) allDone() bool {
 }
 
 func (m *Model) collectResults() []Result {
-	results := make([]Result, 0, len(m.items))
+	results := make([]Result, 0, m.countSelected())
 	for _, it := range m.items {
+		if !it.selected {
+			continue
+		}
 		results = append(results, Result{
 			RoleName: it.assignment.RoleName,
 			Scope:    it.assignment.ScopeDisplay,
@@ -293,7 +296,7 @@ func (m Model) View() string {
 			case itemDone:
 				stateStr = m.theme.Active.Render("✓ done")
 			case itemFailed:
-				stateStr = m.theme.Subtle.Foreground(m.theme.Danger).Render("✗ failed")
+				stateStr = m.theme.DangerText.Render("✗ failed")
 			default:
 				stateStr = m.theme.Subtle.Render("waiting")
 			}

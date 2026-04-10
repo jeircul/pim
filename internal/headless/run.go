@@ -21,17 +21,17 @@ func Run(ctx context.Context, a *app.App) error {
 
 	switch a.Config.Command {
 	case app.CmdStatus:
-		return runStatus(ctx, a, user)
+		return runStatus(a, user)
 	case app.CmdDeactivate:
-		return runDeactivate(ctx, a, user)
+		return runDeactivate(a, user)
 	case app.CmdActivate:
-		return runActivate(ctx, a, user)
+		return runActivate(a, user)
 	default:
-		return runStatus(ctx, a, user)
+		return runStatus(a, user)
 	}
 }
 
-func runStatus(ctx context.Context, a *app.App, user *azure.User) error {
+func runStatus(a *app.App, user *azure.User) error {
 	assignments, err := a.Client.GetActiveAssignments()
 	if err != nil {
 		return fmt.Errorf("get active assignments: %w", err)
@@ -54,7 +54,7 @@ func runStatus(ctx context.Context, a *app.App, user *azure.User) error {
 	return tw.Flush()
 }
 
-func runDeactivate(ctx context.Context, a *app.App, user *azure.User) error {
+func runDeactivate(a *app.App, user *azure.User) error {
 	assignments, err := a.Client.GetActiveAssignments()
 	if err != nil {
 		return fmt.Errorf("get active assignments: %w", err)
@@ -66,17 +66,19 @@ func runDeactivate(ctx context.Context, a *app.App, user *azure.User) error {
 		return nil
 	}
 
+	var lastErr error
 	for _, assignment := range targets {
 		if _, err := a.Client.DeactivateRole(assignment, user.ID); err != nil {
 			fmt.Fprintf(os.Stderr, "deactivate %s@%s: %v\n", assignment.RoleName, assignment.ScopeDisplay, err)
+			lastErr = err
 			continue
 		}
 		fmt.Printf("Deactivated: %s @ %s\n", assignment.RoleName, assignment.ScopeDisplay)
 	}
-	return nil
+	return lastErr
 }
 
-func runActivate(ctx context.Context, a *app.App, user *azure.User) error {
+func runActivate(a *app.App, user *azure.User) error {
 	cfg := a.Config
 	if !cfg.HasRoleFilter() || !cfg.HasScopeFilter() || cfg.TimeStr == "" || cfg.Justification == "" {
 		return fmt.Errorf("--headless activate requires --role, --scope, --time, and --justification")
@@ -109,6 +111,7 @@ func runActivate(ctx context.Context, a *app.App, user *azure.User) error {
 	}
 
 	if lastErr != nil {
+		a.Store.AddRecentJustification(cfg.Justification)
 		_ = a.Store.SaveState()
 		return lastErr
 	}

@@ -107,3 +107,47 @@ func TestTimeRemaining(t *testing.T) {
 		t.Fatal("expected IsPermanent true")
 	}
 }
+
+func TestParseDurationMinutes(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    int
+		wantErr bool
+	}{
+		{"hours only", "1h", 60, false},
+		{"hours only uppercase", "1H", 60, false},
+		{"minutes only", "30m", 30, false},
+		{"minutes only uppercase", "30M", 30, false},
+		{"combined", "1h30m", 90, false},
+		{"float hours", "1.5h", 90, false},
+		{"float half hour", "0.5h", 30, false},
+		{"two hours", "2h", 120, false},
+		{"eight hours max", "8h", 480, false},
+		{"over max clamped", "9h", 480, false},
+		{"below min clamped", "10m", 30, false},
+		{"empty", "", 0, true},
+		{"garbage", "garbage", 0, true},
+		{"trailing garbage m", "30mph", 0, true},
+		{"trailing garbage h", "2hx", 0, true},
+		{"trailing garbage combined", "1h30mx", 0, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ParseDurationMinutes(tc.input)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("ParseDurationMinutes(%q) = %d, want error", tc.input, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("ParseDurationMinutes(%q) unexpected error: %v", tc.input, err)
+				return
+			}
+			if got != tc.want {
+				t.Errorf("ParseDurationMinutes(%q) = %d, want %d", tc.input, got, tc.want)
+			}
+		})
+	}
+}

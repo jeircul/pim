@@ -275,12 +275,12 @@ func (w Wizard) advanceFromRoles() (Wizard, tea.Cmd) {
 	return w.startOptions()
 }
 
-// scopeOverride returns the first --scope flag value that is a prefix of r.Scope,
-// enabling targeted sub-scope activation for MG-scoped roles.
+// scopeOverride returns the first --scope flag value that is a child of (or equal to)
+// r.Scope, enabling scoped-down activation for MG/subscription-eligible roles.
 func (w Wizard) scopeOverride(r azure.Role) string {
 	for _, s := range w.deps.ScopeFilter {
 		s = strings.TrimSpace(s)
-		if s != "" && strings.HasPrefix(strings.ToLower(r.Scope), strings.ToLower(s)) {
+		if s != "" && strings.HasPrefix(strings.ToLower(s), strings.ToLower(r.Scope)) {
 			return s
 		}
 	}

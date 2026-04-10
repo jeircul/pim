@@ -32,8 +32,6 @@ const (
 type Client struct {
 	cred       azcore.TokenCredential
 	httpClient *http.Client
-	armToken   string
-	graphToken string
 	ctx        context.Context
 }
 
@@ -90,22 +88,14 @@ func (c *Client) getToken(scope string) (string, error) {
 	return tok.Token, nil
 }
 
-func (c *Client) ensureTokens() error {
-	if c.armToken == "" {
-		tok, err := c.getToken("https://management.azure.com/.default")
-		if err != nil {
-			return err
-		}
-		c.armToken = tok
-	}
-	if c.graphToken == "" {
-		tok, err := c.getToken("https://graph.microsoft.com/.default")
-		if err != nil {
-			return err
-		}
-		c.graphToken = tok
-	}
-	return nil
+// armToken returns a fresh ARM token. azidentity handles caching and refresh internally.
+func (c *Client) armToken() (string, error) {
+	return c.getToken("https://management.azure.com/.default")
+}
+
+// graphToken returns a fresh Graph token. azidentity handles caching and refresh internally.
+func (c *Client) graphToken() (string, error) {
+	return c.getToken("https://graph.microsoft.com/.default")
 }
 
 func (c *Client) doRequest(method, reqURL, token string, body io.Reader) (*http.Response, error) {
@@ -147,10 +137,11 @@ func errorFromResponse(resp *http.Response) error {
 
 // GetCurrentUser fetches the current user from Microsoft Graph.
 func (c *Client) GetCurrentUser() (*User, error) {
-	if err := c.ensureTokens(); err != nil {
+	tok, err := c.graphToken()
+	if err != nil {
 		return nil, err
 	}
-	resp, err := c.doRequest(http.MethodGet, graphEndpoint+"/me", c.graphToken, nil)
+	resp, err := c.doRequest(http.MethodGet, graphEndpoint+"/me", tok, nil)
 	if err != nil {
 		return nil, fmt.Errorf("get current user: %w", err)
 	}
@@ -165,13 +156,14 @@ func (c *Client) GetCurrentUser() (*User, error) {
 
 // GetEligibleRoles fetches all eligible PIM roles for the current user.
 func (c *Client) GetEligibleRoles() ([]Role, error) {
-	if err := c.ensureTokens(); err != nil {
+	tok, err := c.armToken()
+	if err != nil {
 		return nil, err
 	}
 	reqURL := fmt.Sprintf("%s/providers/Microsoft.Authorization/roleEligibilitySchedules?api-version=%s&$filter=asTarget()",
 		armEndpoint, apiVersion)
 
-	resp, err := c.doRequest(http.MethodGet, reqURL, c.armToken, nil)
+	resp, err := c.doRequest(http.MethodGet, reqURL, tok, nil)
 	if err != nil {
 		return nil, fmt.Errorf("get eligible roles: %w", err)
 	}
@@ -213,13 +205,14 @@ func (c *Client) GetEligibleRoles() ([]Role, error) {
 
 // GetActiveAssignments fetches all active PIM assignments for the calling user.
 func (c *Client) GetActiveAssignments() ([]ActiveAssignment, error) {
-	if err := c.ensureTokens(); err != nil {
+	tok, err := c.armToken()
+	if err != nil {
 		return nil, err
 	}
 	reqURL := fmt.Sprintf("%s/providers/Microsoft.Authorization/roleAssignmentScheduleInstances?api-version=%s&$filter=asTarget()",
 		armEndpoint, apiVersion)
 
-	resp, err := c.doRequest(http.MethodGet, reqURL, c.armToken, nil)
+	resp, err := c.doRequest(http.MethodGet, reqURL, tok, nil)
 	if err != nil {
 		return nil, fmt.Errorf("get active assignments: %w", err)
 	}
@@ -270,14 +263,15 @@ func (c *Client) IsRoleActive(role Role, principalID string) (bool, error) {
 }
 
 func (c *Client) isRoleActiveAt(scope, roleDefinitionID, principalID string) (bool, error) {
-	if err := c.ensureTokens(); err != nil {
+	tok, err := c.armToken()
+	if err != nil {
 		return false, err
 	}
 	filter := fmt.Sprintf("principalId eq '%s' and roleDefinitionId eq '%s'", principalID, roleDefinitionID)
 	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/roleAssignmentSchedules?api-version=%s&$filter=%s",
 		armEndpoint, scope, apiVersion, url.QueryEscape(filter))
 
-	resp, err := c.doRequest(http.MethodGet, reqURL, c.armToken, nil)
+	resp, err := c.doRequest(http.MethodGet, reqURL, tok, nil)
 	if err != nil {
 		if strings.Contains(err.Error(), "HTTP 500") || strings.Contains(err.Error(), "HTTP 400") {
 			return false, nil
@@ -297,7 +291,8 @@ func (c *Client) isRoleActiveAt(scope, roleDefinitionID, principalID string) (bo
 
 // ActivateRole submits an activation or extension request.
 func (c *Client) ActivateRole(role Role, principalID, justification string, minutes int, targetScope string) (*ScheduleResponse, error) {
-	if err := c.ensureTokens(); err != nil {
+	tok, err := c.armToken()
+	if err != nil {
 		return nil, err
 	}
 	minutes = ClampMinutes(minutes)
@@ -342,7 +337,7 @@ func (c *Client) ActivateRole(role Role, principalID, justification string, minu
 	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/roleAssignmentScheduleRequests/%s?api-version=%s",
 		armEndpoint, scopePath, requestID, apiVersion)
 
-	resp, err := c.doRequest(http.MethodPut, reqURL, c.armToken, bytes.NewReader(body))
+	resp, err := c.doRequest(http.MethodPut, reqURL, tok, bytes.NewReader(body))
 	if err != nil {
 		if IsResourceGroupScope(scopePath) && isAuthorizationError(err) {
 			return c.activateAtSubscriptionScope(req, scopePath)
@@ -363,6 +358,10 @@ func (c *Client) ActivateRole(role Role, principalID, justification string, minu
 // target RG before it will process PIM requests there — a chicken-and-egg that makes
 // RG-scope activation impossible without a pre-existing assignment.
 func (c *Client) activateAtSubscriptionScope(req ScheduleRequest, rgScope string) (*ScheduleResponse, error) {
+	tok, err := c.armToken()
+	if err != nil {
+		return nil, err
+	}
 	subID := SubscriptionIDFromScope(rgScope)
 	if subID == "" {
 		return nil, fmt.Errorf("submit activation: cannot determine subscription from RG scope %s", rgScope)
@@ -378,7 +377,7 @@ func (c *Client) activateAtSubscriptionScope(req ScheduleRequest, rgScope string
 	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/roleAssignmentScheduleRequests/%s?api-version=%s",
 		armEndpoint, subScope, requestID, apiVersion)
 
-	resp, err := c.doRequest(http.MethodPut, reqURL, c.armToken, bytes.NewReader(body))
+	resp, err := c.doRequest(http.MethodPut, reqURL, tok, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("submit activation at subscription scope: %w", err)
 	}
@@ -401,7 +400,8 @@ func isAuthorizationError(err error) bool {
 
 // DeactivateRole submits a role deactivation request.
 func (c *Client) DeactivateRole(assignment ActiveAssignment, principalID string) (*ScheduleResponse, error) {
-	if err := c.ensureTokens(); err != nil {
+	tok, err := c.armToken()
+	if err != nil {
 		return nil, err
 	}
 
@@ -421,7 +421,7 @@ func (c *Client) DeactivateRole(assignment ActiveAssignment, principalID string)
 	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/roleAssignmentScheduleRequests/%s?api-version=%s",
 		armEndpoint, assignment.Scope, requestID, apiVersion)
 
-	resp, err := c.doRequest(http.MethodPut, reqURL, c.armToken, bytes.NewReader(body))
+	resp, err := c.doRequest(http.MethodPut, reqURL, tok, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("submit deactivation: %w", err)
 	}
@@ -436,9 +436,6 @@ func (c *Client) DeactivateRole(assignment ActiveAssignment, principalID string)
 
 // ListManagementGroupSubscriptions returns subscriptions under a management group.
 func (c *Client) ListManagementGroupSubscriptions(mgID string) ([]Subscription, error) {
-	if err := c.ensureTokens(); err != nil {
-		return nil, err
-	}
 	mgID = strings.TrimSpace(mgID)
 	if mgID == "" {
 		return nil, fmt.Errorf("management group id cannot be empty")
@@ -481,7 +478,8 @@ func (c *Client) ListManagementGroupResourceGroups(mgID string) ([]ResourceGroup
 
 // ListSubscriptionResourceGroups lists resource groups for a subscription.
 func (c *Client) ListSubscriptionResourceGroups(subscriptionID string) ([]ResourceGroup, error) {
-	if err := c.ensureTokens(); err != nil {
+	tok, err := c.armToken()
+	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(subscriptionID) == "" {
@@ -493,7 +491,7 @@ func (c *Client) ListSubscriptionResourceGroups(subscriptionID string) ([]Resour
 
 	var out []ResourceGroup
 	for reqURL != "" {
-		resp, err := c.doRequest(http.MethodGet, reqURL, c.armToken, nil)
+		resp, err := c.doRequest(http.MethodGet, reqURL, tok, nil)
 		if err != nil {
 			return nil, fmt.Errorf("list resource groups for %s: %w", subscriptionID, err)
 		}
@@ -522,12 +520,16 @@ func (c *Client) ListSubscriptionResourceGroups(subscriptionID string) ([]Resour
 // scope path, e.g. "/providers/Microsoft.Management/managementGroups/{id}"
 // or "/subscriptions/{id}".
 func (c *Client) fetchEligibleChildResources(scope string) ([]childResource, error) {
+	tok, err := c.armToken()
+	if err != nil {
+		return nil, err
+	}
 	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/eligibleChildResources?api-version=%s",
 		armEndpoint, scope, eligibleChildResourcesAPIVersion)
 
 	var out []childResource
 	for reqURL != "" {
-		resp, err := c.doRequest(http.MethodGet, reqURL, c.armToken, nil)
+		resp, err := c.doRequest(http.MethodGet, reqURL, tok, nil)
 		if err != nil {
 			return nil, fmt.Errorf("eligible child resources for %s: %w", scope, err)
 		}
@@ -570,9 +572,6 @@ func (c *Client) listEligibleChildSubscriptions(mgID string) ([]Subscription, er
 // manage via PIM under the given subscription. Uses the PIM
 // eligibleChildResources API so it works before any RBAC is granted.
 func (c *Client) ListEligibleResourceGroups(subscriptionID string) ([]ResourceGroup, error) {
-	if err := c.ensureTokens(); err != nil {
-		return nil, err
-	}
 	if strings.TrimSpace(subscriptionID) == "" {
 		return nil, fmt.Errorf("subscription id cannot be empty")
 	}
@@ -596,12 +595,16 @@ func (c *Client) ListEligibleResourceGroups(subscriptionID string) ([]ResourceGr
 }
 
 func (c *Client) listMGSubscriptionsLegacy(mgID string) ([]Subscription, error) {
+	tok, err := c.armToken()
+	if err != nil {
+		return nil, err
+	}
 	reqURL := fmt.Sprintf("%s/providers/Microsoft.Management/managementGroups/%s/subscriptions?api-version=%s",
 		armEndpoint, url.PathEscape(mgID), managementGroupSubscriptionsAPIVersion)
 
 	var out []Subscription
 	for reqURL != "" {
-		resp, err := c.doRequest(http.MethodGet, reqURL, c.armToken, nil)
+		resp, err := c.doRequest(http.MethodGet, reqURL, tok, nil)
 		if err != nil {
 			return nil, fmt.Errorf("list subscriptions for %s: %w", mgID, err)
 		}

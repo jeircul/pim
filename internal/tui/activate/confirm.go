@@ -195,7 +195,7 @@ func (m Confirm) View() string {
 			if it.err != nil {
 				msg = "failed: " + it.err.Error()
 			}
-			statusStr = m.theme.Subtle.Foreground(m.theme.Danger).Render(msg)
+			statusStr = m.theme.DangerText.Render(msg)
 		default:
 			statusStr = m.theme.Subtle.Render("waiting")
 		}

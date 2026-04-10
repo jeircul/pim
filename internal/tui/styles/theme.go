@@ -19,6 +19,7 @@ type Theme struct {
 	Title            lipgloss.Style
 	Active           lipgloss.Style
 	Subtle           lipgloss.Style
+	DangerText       lipgloss.Style
 	Bold             lipgloss.Style
 	Tag              lipgloss.Style
 	TableHeader      lipgloss.Style
@@ -64,6 +65,9 @@ func NewTheme(isDark bool) Theme {
 
 		Subtle: lipgloss.NewStyle().
 			Foreground(muted),
+
+		DangerText: lipgloss.NewStyle().
+			Foreground(danger),
 
 		Bold: lipgloss.NewStyle().
 			Bold(true),
