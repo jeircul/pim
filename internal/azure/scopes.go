@@ -1,6 +1,9 @@
 package azure
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 // IsManagementGroupScope reports whether the scope is a management group.
 func IsManagementGroupScope(scope string) bool {
@@ -59,7 +62,6 @@ func ResourceGroupNameFromScope(scope string) (subscriptionID, resourceGroup str
 	const marker = "/resourceGroups/"
 	idx := strings.Index(scope, marker)
 	if idx == -1 {
-		// Try case-insensitive
 		lower := strings.ToLower(scope)
 		idx = strings.Index(lower, strings.ToLower(marker))
 		if idx == -1 {
@@ -96,4 +98,19 @@ func DefaultScopeDisplay(scope, display string) string {
 		}
 	}
 	return scope
+}
+
+// ScopeIsChildOf reports whether child is equal to or a descendant of parent.
+// Both are ARM scope paths (case-insensitive, segment-boundary match).
+func ScopeIsChildOf(child, parent string) bool {
+	c := strings.ToLower(strings.TrimRight(child, "/"))
+	p := strings.ToLower(strings.TrimRight(parent, "/"))
+	return c == p || strings.HasPrefix(c, p+"/")
+}
+
+var reSegmentKeyword = regexp.MustCompile(`(?i)/subscriptions/|/resourcegroups/|/providers/microsoft\.management/managementgroups/`)
+
+// NormalizeScope lowercases known ARM segment keywords while preserving IDs/names verbatim.
+func NormalizeScope(s string) string {
+	return reSegmentKeyword.ReplaceAllStringFunc(s, strings.ToLower)
 }

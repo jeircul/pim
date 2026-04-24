@@ -37,7 +37,7 @@ func FormatDuration(minutes int) string {
 }
 
 // ParseDurationMinutes parses a human duration string (1h, 30m, 1h30m, 1.5h) into minutes.
-// Input is case-insensitive.
+// Input is case-insensitive. Negative values are rejected.
 func ParseDurationMinutes(s string) (int, error) {
 	if s == "" {
 		return 0, fmt.Errorf("empty duration")
@@ -47,9 +47,11 @@ func ParseDurationMinutes(s string) (int, error) {
 	// "XhYm" — must end exactly after the 'm'
 	if hPart, rest, ok := strings.Cut(s, "h"); ok && strings.HasSuffix(rest, "m") {
 		mPart := strings.TrimSuffix(rest, "m")
-		// ensure mPart is all digits and non-empty (integer minutes)
 		if h, err := strconv.Atoi(hPart); err == nil {
 			if m, err := strconv.Atoi(mPart); err == nil {
+				if h < 0 || m < 0 {
+					return 0, fmt.Errorf("negative duration not allowed")
+				}
 				return ClampMinutes(h*60 + m), nil
 			}
 		}
@@ -58,12 +60,16 @@ func ParseDurationMinutes(s string) (int, error) {
 	// "Xh" — ends with h, prefix is an integer or float
 	if strings.HasSuffix(s, "h") {
 		numPart := strings.TrimSuffix(s, "h")
-		// integer hours
 		if h, err := strconv.Atoi(numPart); err == nil {
+			if h < 0 {
+				return 0, fmt.Errorf("negative duration not allowed")
+			}
 			return ClampMinutes(h * 60), nil
 		}
-		// float hours (e.g. "1.5h")
 		if f, err := strconv.ParseFloat(numPart, 64); err == nil {
+			if f < 0 {
+				return 0, fmt.Errorf("negative duration not allowed")
+			}
 			return ClampMinutes(int(f * 60)), nil
 		}
 	}
@@ -72,6 +78,9 @@ func ParseDurationMinutes(s string) (int, error) {
 	if strings.HasSuffix(s, "m") {
 		numPart := strings.TrimSuffix(s, "m")
 		if m, err := strconv.Atoi(numPart); err == nil {
+			if m < 0 {
+				return 0, fmt.Errorf("negative duration not allowed")
+			}
 			return ClampMinutes(m), nil
 		}
 	}

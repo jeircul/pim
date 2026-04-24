@@ -3,6 +3,9 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/jeircul/pim/internal/azure"
@@ -27,8 +30,8 @@ func New(cfg Config, version string) (*App, error) {
 }
 
 // Connect creates the Azure client and validates credentials.
-func (a *App) Connect(ctx context.Context) error {
-	client, err := azure.NewClient(ctx)
+func (a *App) Connect(_ context.Context) error {
+	client, err := azure.NewClient()
 	if err != nil {
 		return err
 	}
@@ -36,7 +39,12 @@ func (a *App) Connect(ctx context.Context) error {
 	return nil
 }
 
-// DefaultContext returns a 2-minute background context.
+// DefaultContext returns a context that cancels on SIGINT/SIGTERM or after 2 minutes.
 func DefaultContext() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), 2*time.Minute)
+	sigCtx, sigCancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	timeCtx, timeCancel := context.WithTimeout(sigCtx, 2*time.Minute)
+	return timeCtx, func() {
+		timeCancel()
+		sigCancel()
+	}
 }
