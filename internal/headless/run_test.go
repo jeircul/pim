@@ -167,6 +167,7 @@ func TestRunDeactivate(t *testing.T) {
 		Scope:            "/subscriptions/sub-1",
 		ScopeDisplay:     "My Sub",
 		RoleDefinitionID: "rd-1",
+		EndDateTime:      "2099-01-01T00:00:00Z",
 	}
 
 	tests := []struct {
@@ -242,6 +243,7 @@ func TestRunDeactivateYesFlag(t *testing.T) {
 		Scope:            "/subscriptions/sub-1",
 		ScopeDisplay:     "My Sub",
 		RoleDefinitionID: "rd-1",
+		EndDateTime:      "2099-01-01T00:00:00Z",
 	}
 
 	a := newTestApp(t, app.Config{

@@ -69,7 +69,8 @@ pim activate --headless \
   --justification "Deploy pipeline"
 
 # Deactivate matching assignments (--role/--scope or --yes required to avoid
-# accidentally deactivating everything; inherited group assignments are skipped)
+# accidentally deactivating everything; permanent and inherited assignments
+# are skipped because they cannot be deactivated via PIM)
 pim deactivate --headless --role Reader
 
 # Status — JSON output
