@@ -25,9 +25,9 @@ tasks:
       - go mod tidy
 
   test:
-    desc: Run unit tests
+    desc: Run unit tests with race detector
     cmds:
-      - go test ./...
+      - go test -race ./...
 
   build:
     desc: Build for current platform

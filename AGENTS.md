@@ -1,0 +1,68 @@
+# pim — Azure PIM TUI Manager
+
+Terminal-based Azure Privileged Identity Management role activation. Bubble Tea v2 TUI is the primary interface; `--headless` for CI/scripting.
+
+## Stack
+
+- Go 1.26
+- TUI: Bubble Tea v2, Lip Gloss v2, Bubbles v2, Huh v2
+- Azure: `azidentity` + `azcore` + raw REST (no ARM SDK for PIM)
+- Persistence: TOML via BurntSushi/toml (`~/.config/pim/`)
+- Build: Task (`task fmt / test / build / install`), GoReleaser
+
+## Layout
+
+```
+internal/app/        CLI flag parsing, app composition, ctx setup
+internal/azure/      PIM REST client (client/roles/activation/discovery), errors, scopes, duration
+internal/state/      TOML config + state with mutex-guarded Store
+internal/headless/   non-TUI execution path for --headless
+internal/tui/        Bubble Tea screens
+  activate/          4-step wizard
+  dashboard/         home screen + favorites
+  status/            active + eligible roles
+  deactivate/        deactivation screen
+  favorites/         favorites CRUD
+  components/        header, statusbar, spinner, tree, help
+  styles/            theme + KeyMap
+```
+
+## Workflow
+
+```bash
+task fmt && task test && task build   # before every commit (test runs -race)
+task install                          # install to ~/.local/bin
+```
+
+## Rules
+
+- `internal/` only. No `pkg/`, no Cobra/urfave, no testify, no logging libs.
+- Early returns; guard clauses over nested `if`.
+- Errors: `fmt.Errorf("noun phrase: %w", err)`. No "failed to" prefix.
+- Typed errors over string matching: use `errors.As(err, &apiErr)` against `*azure.APIError`.
+- `context.Context` is per-call, never stored on structs.
+- No inline comments; godoc on exported symbols only.
+- Delete obsolete code in the same change. No opportunistic refactoring.
+
+## Azure PIM API quirks
+
+- `linkedRoleEligibilityScheduleId` must be the full ARM resource path, not a bare GUID.
+- Inherited MG-level eligibilities are invisible when re-queried at child scopes.
+- RG-scope activation returns 403 (chicken-and-egg). The client falls back to subscription scope automatically.
+- `roleAssignmentSchedules` GET at RG scope returns 500 when the caller lacks read access. Treated as "not active".
+- `GetEligibleRoles` and `GetActiveAssignments` paginate via `nextLink`.
+
+Full API reference: `.agents/skills/golang/references/azure-pim-api.md`.
+
+## Scope and role matching (headless)
+
+- `--role` and `--scope` use exact-first, substring-fallback matching.
+- Multiple substring matches with no exact match returns an ambiguity error.
+- ARM scope paths take precedence over display-name matching.
+
+## Skills
+
+`.agents/skills/golang/` has full Go conventions, Bubble Tea v2 patterns, and the Azure PIM API reference.
+
+- OpenCode: `skill golang` (auto-loads on Go/Azure tasks).
+- Other agents: read `.agents/skills/golang/SKILL.md` and `references/`.

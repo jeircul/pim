@@ -1,0 +1,99 @@
+# golangci-lint config for pim
+# Run: golangci-lint run --config .agents/skills/golang/scripts/golangci-lint.yml ./...
+# Or copy to repo root as .golangci.yml
+
+run:
+  timeout: 3m
+  go: "1.26"
+  modules-download-mode: readonly
+
+linters:
+  disable-all: true
+  enable:
+    # --- correctness ---
+    - errcheck          # all errors must be checked
+    - govet             # go vet checks (shadow, composites, etc.)
+    - staticcheck       # SA* checks — bugs, deprecated, performance
+    - ineffassign       # catch assignments that are never read
+    - unused            # unexported identifiers never used
+
+    # --- style ---
+    - gofmt             # code must be gofmt'd
+    - goimports         # import grouping: stdlib / external / internal
+    - revive            # idiomatic Go style (replaces golint)
+    - godot             # godoc comments must end with period
+    - misspell          # common spelling mistakes
+
+    # --- complexity / maintainability ---
+    - gocognit          # cognitive complexity
+    - cyclop            # cyclomatic complexity
+    - funlen            # function length
+    - nestif            # deeply nested ifs
+
+    # --- security ---
+    - gosec             # common security issues (G* rules)
+
+    # --- bugs ---
+    - bodyclose         # HTTP response body must be closed
+    - noctx             # http.NewRequest must use context variant
+    - rowserrcheck      # sql.Rows.Err() must be checked
+    - sqlclosecheck     # sql.Rows/Stmt must be closed
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: false   # allow _ = someErr() for documented intentional ignores
+
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment  # don't force struct padding optimisation in this codebase
+
+  revive:
+    rules:
+      - name: exported
+        arguments: [{checkPrivateReceivers: true}]
+      - name: error-strings          # lowercase, no period
+      - name: if-return              # simplify if x { return y } return z
+      - name: increment-decrement    # prefer i++ over i += 1
+      - name: var-naming             # initialisms: URL, ID, PIM
+      - name: receiver-naming        # single-letter, consistent
+
+  gocognit:
+    min-complexity: 15
+
+  cyclop:
+    max-complexity: 10
+
+  funlen:
+    lines: 80
+    statements: 50
+
+  nestif:
+    min-complexity: 5
+
+  gosec:
+    excludes:
+      - G104  # errors unhandled — covered by errcheck
+      - G304  # file path from variable — intentional in state/store.go
+      - G306  # WriteFile perm — we use 0600, which is fine
+
+  godot:
+    scope: declarations   # only exported godoc comments
+
+  goimports:
+    local-prefixes: github.com/jeircul/pim
+
+issues:
+  # Don't report issues in generated files or test helpers.
+  exclude-rules:
+    - path: "_test\\.go$"
+      linters: [funlen, gocognit, cyclop]  # tests can be longer
+    - path: "internal/completion/"
+      linters: [funlen]                    # completion scripts are long by nature
+
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  # Report only new issues in CI (add --new-from-rev=HEAD~1 to golangci-lint run).
+  new: false

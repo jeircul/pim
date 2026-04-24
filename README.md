@@ -1,19 +1,21 @@
-# ⚡️ PIM – Azure PIM CLI
+# ⚡ pim — Azure PIM role elevation manager
 
-Small, friendly CLI for activating, deactivating, and inspecting Azure Privileged Identity Management (PIM) role assignments.
+Terminal UI for activating, deactivating, and inspecting Azure Privileged Identity Management (PIM) role assignments. Mirrors the Azure portal activation flow entirely in your terminal.
 
 ## ✨ Highlights
 
-- 🔐 Guided menu when you launch `pim` with no arguments
-- 🎯 Fast flag flow for scripts (`pim activate -j "Patch" --sub prod --yes`)
-- 🧭 Scoped activations for management groups, subscriptions, and resource groups
-- 🔁 Quick status and deactivate commands for active elevations
+- 🖥️ Full-screen TUI — dashboard, activation wizard, status, deactivation, favorites management
+- 🎯 Flags pre-fill wizard steps and auto-advance; `--headless` bypasses the TUI for scripting
+- 🎨 Adaptive theme — works on light and dark terminals
+- ⭐ Favorites with 1–9 number-key shortcuts for instant re-activation
+- 💾 TOML state persistence — remembers recent justifications and favorites across sessions
+- 🐚 Shell completions for bash, zsh, and fish
 
 ## 📦 Install
 
 macOS / Linux:
 
-```shell
+```sh
 curl -sSfL https://raw.githubusercontent.com/jeircul/pim/main/scripts/install.sh | bash
 ```
 
@@ -23,55 +25,149 @@ Windows (PowerShell):
 irm https://raw.githubusercontent.com/jeircul/pim/main/scripts/install.ps1 | iex
 ```
 
-Add a version (for example `v0.1.7`) as the final argument to pin a release. Make sure `~/.local/bin` (Unix) or `%LOCALAPPDATA%\Programs\pim` (Windows) is on `PATH`.
+`~/.local/bin` (Unix) or `%LOCALAPPDATA%\Programs\pim` (Windows) must be on `PATH`.
 
-## 🚀 Quick Start
+## 🚀 Quick start
 
-```shell
-pim                     # guided prompts with search and filtering
-pim activate -j "Deploy" --sub platform --rg app   # auto-drills to resource group
-pim activate -j "Quick fix" -t 30m --yes           # 30 minutes, skip confirmation
-pim activate -j "Extended" -t 2h30m                # 2 hours 30 minutes
-pim status              # show active assignments
-pim deactivate          # stop an elevation early
-pim help activate       # discover all flags and options
+```sh
+pim                          # TUI dashboard — shows active elevations and favorites
+pim activate                 # launch activation wizard from step 1
+pim deactivate               # select and deactivate active elevations
+pim status                   # view active and eligible roles
+pim version                  # print version
 ```
 
-- Reuses existing `az login` / `Connect-AzAccount` sessions (enable `PIM_ALLOW_DEVICE_LOGIN=true` to allow device code fallback).
-- Durations support flexible formats: `30m`, `1h`, `1.5h`, `1h30m`, or plain numbers like `2` (hours). Range: 30 minutes to 8 hours in 30-minute increments.
-- Filters (`--mg`, `--sub`, `--rg`, `--role`, `--scope`) can repeat and narrow the interactive list.
-- Scope hints (`--sub`, `--rg`) automatically drill down when specific enough (e.g., `--mg MyGroup --sub prod` auto-selects the subscription).
-- `--yes` skips the final confirmation prompt for automation scenarios.
+### 🏎️ Flag acceleration
 
-## 📤 Releases
+Flags pre-fill wizard fields and skip steps when enough information is provided:
 
-Runtime version details come from `git describe`. Publish a new release by tagging and pushing:
+```sh
+# Pre-filter the role list
+pim activate --role Reader
 
-```shell
-git tag v0.1.7
-git push origin v0.1.7
+# Jump straight to options step (role + scope already known)
+pim activate --role Reader --scope /subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+
+# Auto-submit with no TUI interaction
+pim activate \
+  --role Reader \
+  --scope /subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx \
+  --time 1h \
+  --justification "Investigating alert" \
+  --yes
 ```
 
-A GitHub Actions workflow triggers GoReleaser to build and attach platform archives automatically.
+### 🤖 Headless mode (scripting / CI)
+
+```sh
+# Activate — all four flags required
+pim activate --headless \
+  --role Reader \
+  --scope /subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx \
+  --time 1h \
+  --justification "Deploy pipeline"
+
+# Deactivate matching assignments
+pim deactivate --headless --role Reader
+
+# Status — JSON output
+pim status --headless --output json
+```
+
+Exit code `0` on success, `1` on error.
+
+## 🐚 Shell completions
+
+```sh
+# bash — add to ~/.bashrc
+source <(pim completion bash)
+
+# zsh — add to ~/.zshrc
+source <(pim completion zsh)
+
+# fish
+pim completion fish > ~/.config/fish/completions/pim.fish
+```
+
+## ⏱️ Duration format
+
+`30m`, `1h`, `2h`, `1h30m`, `1.5h`. Range: 30 minutes – 8 hours in 30-minute increments.
+
+## 🔐 Authentication
+
+Uses the existing `az login` / `Connect-AzAccount` session automatically.  
+Set `PIM_ALLOW_DEVICE_LOGIN=true` to allow interactive device code fallback when no cached credential is found.
+
+## ⚙️ Configuration
+
+State is stored in `~/.config/pim/`:
+
+| File | Purpose |
+|---|---|
+| `config.toml` | Hand-editable preferences and favorites |
+| `state.toml` | Auto-managed: recent justifications |
+
+Example `config.toml`:
+
+```toml
+[preferences]
+default_duration = "1h"
+
+[[favorites]]
+label = "Prod reader"
+role  = "Reader"
+scope = "/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+duration = "1h"
+key  = 1
+
+[[favorites]]
+label = "Dev owner"
+role  = "Owner"
+scope = "/subscriptions/yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
+duration = "2h"
+key  = 2
+```
 
 ## 🛠️ Development
 
-```shell
+### Prerequisites
+
+- [Go](https://go.dev/dl/) 1.26.1+
+- [Task](https://taskfile.dev/) (task runner)
+- [GoReleaser](https://goreleaser.com/) (releases only)
+
+The quickest way to install all tools at once (Linux, macOS, WSL):
+
+```sh
+# Install mise (https://mise.jdx.dev/)
+curl https://mise.run | sh
+
+# Install all declared tools from .mise.toml
+mise install
+```
+
+Or install each tool manually via their respective docs.
+
+### Common tasks
+
+```sh
+task build    # build binary for current platform
+task test     # go test -race ./...
 task fmt      # go fmt ./...
-task test     # go test ./...
-task build    # go build ./...
+task install  # build + install to ~/.local/bin
 task clean    # remove build artefacts
 ```
 
-## ⚠️ Disclaimer & Attribution
+## 📤 Release
 
-- Use this tool at your own risk; the author is not responsible for any impact caused by its usage.
-- Artificial intelligence (GitHub Copilot & friends) assisted with portions of the implementation, reviews, and documentation.
+```sh
+git tag v2.0.0
+git push origin v2.0.0
+```
 
-## 🙌 Get Involved
+GoReleaser builds cross-platform archives (linux, darwin, windows — amd64 + arm64) and attaches them to the GitHub release automatically.
 
-Report issues, share ideas, or follow releases at [github.com/jeircul/pim](https://github.com/jeircul/pim).
+## ⚠️ Disclaimer
 
-## 🛣️ Roadmap
-
-- Saved activation profiles (named bundles that store filters, scopes, and default justifications) to replay common elevation flows faster.
+Use at your own risk. The author is not responsible for any impact caused by its usage.  
+AI tooling (GitHub Copilot) assisted with portions of the implementation, reviews, and documentation.
