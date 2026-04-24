@@ -58,6 +58,7 @@ type Model struct {
 	keys        styles.KeyMap
 	spinner     components.Spinner
 	items       []deactItem
+	skipped     int // permanent + inherited assignments hidden from the list
 	cursor      int
 	step        deactStep
 	loading     bool
@@ -114,9 +115,14 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case loadMsg:
 		m.loading = false
 		m.err = msg.err
-		m.items = make([]deactItem, len(msg.active))
-		for i, a := range msg.active {
-			m.items[i] = deactItem{assignment: a}
+		m.items = m.items[:0]
+		m.skipped = 0
+		for _, a := range msg.active {
+			if strings.EqualFold(a.MemberType, "Inherited") || a.IsPermanent() {
+				m.skipped++
+				continue
+			}
+			m.items = append(m.items, deactItem{assignment: a})
 		}
 		m.cursor = 0
 
@@ -250,7 +256,11 @@ func (m Model) View() string {
 		return sb.String()
 	}
 	if len(m.items) == 0 {
-		sb.WriteString(m.theme.Subtle.Render("no active elevations to deactivate") + "\n")
+		msg := "no active elevations to deactivate"
+		if m.skipped > 0 {
+			msg = fmt.Sprintf("no deactivatable elevations (%d permanent or inherited assignment(s) hidden)", m.skipped)
+		}
+		sb.WriteString(m.theme.Subtle.Render(msg) + "\n")
 		hints := []key.Binding{m.keys.Back}
 		sb.WriteString(components.RenderStatusBar(m.theme.HelpKey, m.theme.HelpDesc, m.theme.Subtle, hints, ""))
 		return sb.String()
@@ -259,6 +269,9 @@ func (m Model) View() string {
 	switch m.step {
 	case stepSelect:
 		sb.WriteString(m.theme.Title.Render("Select roles to deactivate:") + "\n\n")
+		if m.skipped > 0 {
+			sb.WriteString(m.theme.Subtle.Render(fmt.Sprintf("(%d permanent or inherited assignment(s) hidden)", m.skipped)) + "\n\n")
+		}
 		for i, it := range m.items {
 			cur := "  "
 			if i == m.cursor {

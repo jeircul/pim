@@ -2,6 +2,7 @@ package headless
 
 import (
 	"testing"
+	"time"
 
 	"github.com/jeircul/pim/internal/azure"
 )
@@ -206,4 +207,34 @@ func TestMatchBest(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPartitionDeactivatable(t *testing.T) {
+	exp := time.Now().Add(time.Hour).Format(time.RFC3339)
+	assignments := []azure.ActiveAssignment{
+		{RoleName: "direct", MemberType: "Direct", EndDateTime: exp},
+		{RoleName: "inherited", MemberType: "Inherited", EndDateTime: exp},
+		{RoleName: "permanent-direct", MemberType: "Direct", EndDateTime: ""},
+		{RoleName: "permanent-inherited", MemberType: "Inherited", EndDateTime: ""},
+	}
+
+	deact, inh, perm := partitionDeactivatable(assignments)
+
+	if len(deact) != 1 || deact[0].RoleName != "direct" {
+		t.Errorf("deactivatable = %v, want [direct]", roleNames(deact))
+	}
+	if len(inh) != 2 {
+		t.Errorf("inherited count = %d, want 2 (inherited + permanent-inherited)", len(inh))
+	}
+	if len(perm) != 1 || perm[0].RoleName != "permanent-direct" {
+		t.Errorf("permanent = %v, want [permanent-direct]", roleNames(perm))
+	}
+}
+
+func roleNames(a []azure.ActiveAssignment) []string {
+	out := make([]string, len(a))
+	for i, x := range a {
+		out[i] = x.RoleName
+	}
+	return out
 }

@@ -78,10 +78,14 @@ func runDeactivate(ctx context.Context, a *app.App, client ClientAPI, user *azur
 		return fmt.Errorf("get active assignments: %w", err)
 	}
 
-	all, inherited := partitionInherited(assignments)
+	all, inherited, permanent := partitionDeactivatable(assignments)
 	for _, inh := range inherited {
 		fmt.Fprintf(os.Stderr, "skipping inherited assignment: %s @ %s (cannot self-deactivate group-inherited roles)\n",
 			inh.RoleName, inh.ScopeDisplay)
+	}
+	for _, p := range permanent {
+		fmt.Fprintf(os.Stderr, "skipping permanent assignment: %s @ %s (no expiry; not PIM-activated)\n",
+			p.RoleName, p.ScopeDisplay)
 	}
 
 	targets, err := filterAssignments(all, a.Config.Roles, a.Config.Scopes)
@@ -377,16 +381,21 @@ func matchBest(s string, filters []string) (bool, error) {
 	return true, nil
 }
 
-// partitionInherited splits assignments into direct and inherited.
-func partitionInherited(assignments []azure.ActiveAssignment) (direct, inherited []azure.ActiveAssignment) {
+// partitionDeactivatable splits assignments into ones safe to deactivate
+// versus ones that should be skipped: inherited (group membership, cannot
+// self-deactivate) and permanent (no expiry, not PIM-activated).
+func partitionDeactivatable(assignments []azure.ActiveAssignment) (deactivatable, inherited, permanent []azure.ActiveAssignment) {
 	for _, a := range assignments {
-		if strings.EqualFold(a.MemberType, "Inherited") {
+		switch {
+		case strings.EqualFold(a.MemberType, "Inherited"):
 			inherited = append(inherited, a)
-		} else {
-			direct = append(direct, a)
+		case a.IsPermanent():
+			permanent = append(permanent, a)
+		default:
+			deactivatable = append(deactivatable, a)
 		}
 	}
-	return direct, inherited
+	return deactivatable, inherited, permanent
 }
 
 func jsonOut(v any, out io.Writer) error {
