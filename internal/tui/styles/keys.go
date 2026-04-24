@@ -11,6 +11,7 @@ type KeyMap struct {
 	Deactivate key.Binding
 	Status     key.Binding
 	Dashboard  key.Binding
+	Favorites  key.Binding
 	Up         key.Binding
 	Down       key.Binding
 	Enter      key.Binding
@@ -46,6 +47,10 @@ var DefaultKeyMap = KeyMap{
 	Dashboard: key.NewBinding(
 		key.WithKeys("d"),
 		key.WithHelp("d", "dashboard"),
+	),
+	Favorites: key.NewBinding(
+		key.WithKeys("f"),
+		key.WithHelp("f", "favorites"),
 	),
 	Up: key.NewBinding(
 		key.WithKeys("up", "k"),

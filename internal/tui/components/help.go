@@ -9,7 +9,7 @@ import (
 )
 
 // RenderHelp renders a full-screen help overlay listing all keybindings.
-func RenderHelp(theme styles.Theme, width int) string {
+func RenderHelp(theme styles.Theme, keys styles.KeyMap, width int) string {
 	sections := []struct {
 		heading  string
 		bindings []key.Binding
@@ -17,24 +17,24 @@ func RenderHelp(theme styles.Theme, width int) string {
 		{
 			"Navigation",
 			[]key.Binding{
-				key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "dashboard")),
-				key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "status")),
-				key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "activate")),
-				key.NewBinding(key.WithKeys("D"), key.WithHelp("D", "deactivate")),
-				key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "favorites")),
-				key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back / dashboard")),
-				key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+				keys.Dashboard,
+				keys.Status,
+				keys.Activate,
+				keys.Deactivate,
+				keys.Favorites,
+				keys.Back,
+				keys.Quit,
 			},
 		},
 		{
 			"Lists",
 			[]key.Binding{
-				key.NewBinding(key.WithKeys("↑/k"), key.WithHelp("↑/k", "up")),
-				key.NewBinding(key.WithKeys("↓/j"), key.WithHelp("↓/j", "down")),
+				keys.Up,
+				keys.Down,
 				key.NewBinding(key.WithKeys("space"), key.WithHelp("space", "toggle select")),
-				key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
+				keys.Enter,
 				key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
-				key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
+				keys.Refresh,
 			},
 		},
 		{

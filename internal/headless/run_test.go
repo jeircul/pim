@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,26 +25,26 @@ type mockClient struct {
 	deactivateErr error
 }
 
-func (m *mockClient) GetCurrentUser() (*azure.User, error) {
+func (m *mockClient) GetCurrentUser(_ context.Context) (*azure.User, error) {
 	return m.user, m.userErr
 }
 
-func (m *mockClient) GetActiveAssignments() ([]azure.ActiveAssignment, error) {
+func (m *mockClient) GetActiveAssignments(_ context.Context) ([]azure.ActiveAssignment, error) {
 	return m.active, m.activeErr
 }
 
-func (m *mockClient) GetEligibleRoles() ([]azure.Role, error) {
+func (m *mockClient) GetEligibleRoles(_ context.Context) ([]azure.Role, error) {
 	return m.eligible, m.eligibleErr
 }
 
-func (m *mockClient) ActivateRole(role azure.Role, principalID, justification string, minutes int, targetScope string) (*azure.ScheduleResponse, error) {
+func (m *mockClient) ActivateRole(_ context.Context, role azure.Role, principalID, justification string, minutes int, targetScope string) (*azure.ScheduleResponse, error) {
 	if m.activateErr != nil {
 		return nil, m.activateErr
 	}
 	return &azure.ScheduleResponse{}, nil
 }
 
-func (m *mockClient) DeactivateRole(assignment azure.ActiveAssignment, principalID string) (*azure.ScheduleResponse, error) {
+func (m *mockClient) DeactivateRole(_ context.Context, assignment azure.ActiveAssignment, principalID string) (*azure.ScheduleResponse, error) {
 	if m.deactivateErr != nil {
 		return nil, m.deactivateErr
 	}
@@ -138,7 +139,7 @@ func TestRunActivate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			a := newTestApp(t, tc.cfg)
 			out, err := captureOutput(t, func(w io.Writer) error {
-				return runActivate(a, tc.client, user, w)
+				return runActivate(context.Background(), a, tc.client, user, w)
 			})
 			if tc.wantErr != "" {
 				if err == nil {
@@ -184,7 +185,7 @@ func TestRunDeactivate(t *testing.T) {
 			wantErr: "--headless deactivate requires",
 		},
 		{
-			name: "no matching active assignments",
+			name: "no matching active assignments with filter returns error",
 			cfg: app.Config{
 				Command: app.CmdDeactivate,
 				Roles:   []string{"Owner"},
@@ -193,7 +194,7 @@ func TestRunDeactivate(t *testing.T) {
 				user:   user,
 				active: []azure.ActiveAssignment{activeAssignment},
 			},
-			wantOut: "No matching",
+			wantErr: "no active assignments match",
 		},
 		{
 			name: "successful deactivation",
@@ -213,7 +214,7 @@ func TestRunDeactivate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			a := newTestApp(t, tc.cfg)
 			out, err := captureOutput(t, func(w io.Writer) error {
-				return runDeactivate(a, tc.client, user, w)
+				return runDeactivate(context.Background(), a, tc.client, user, w)
 			})
 			if tc.wantErr != "" {
 				if err == nil {
@@ -253,7 +254,7 @@ func TestRunDeactivateYesFlag(t *testing.T) {
 	}
 
 	out, err := captureOutput(t, func(w io.Writer) error {
-		return runDeactivate(a, client, user, w)
+		return runDeactivate(context.Background(), a, client, user, w)
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -275,7 +276,7 @@ func TestRunDeactivateClientError(t *testing.T) {
 	}
 
 	_, err := captureOutput(t, func(w io.Writer) error {
-		return runDeactivate(a, client, user, w)
+		return runDeactivate(context.Background(), a, client, user, w)
 	})
 	if err == nil {
 		t.Fatal("want error, got nil")
@@ -339,7 +340,7 @@ func TestRunStatus(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			a := newTestApp(t, tc.cfg)
 			out, err := captureOutput(t, func(w io.Writer) error {
-				return runStatus(a, tc.client, user, w)
+				return runStatus(context.Background(), a, tc.client, user, w)
 			})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -362,7 +363,7 @@ func TestRunStatusJSONValid(t *testing.T) {
 	}
 
 	out, err := captureOutput(t, func(w io.Writer) error {
-		return runStatus(a, client, user, w)
+		return runStatus(context.Background(), a, client, user, w)
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

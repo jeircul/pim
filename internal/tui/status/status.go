@@ -170,6 +170,3 @@ func (m Model) View() string {
 
 	return sb.String()
 }
-
-// HeaderTitle returns the title for the header bar.
-func (m Model) HeaderTitle() string { return "status" }

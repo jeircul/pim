@@ -84,7 +84,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 }
 
 func (m Model) updateList(msg tea.KeyPressMsg) (Model, tea.Cmd) {
-	favs := m.store.Config.Favorites
+	favs := m.store.Favorites()
 	switch {
 	case key.Matches(msg, m.keys.Up):
 		if m.cursor > 0 {
@@ -132,11 +132,7 @@ func (m Model) updateEdit(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			m.editFld--
 		}
 	case "enter":
-		if m.editIdx == -1 {
-			m.store.UpsertFavorite(m.edit)
-		} else {
-			m.store.Config.Favorites[m.editIdx] = m.edit
-		}
+		m.store.UpsertFavorite(m.edit)
 		_ = m.store.SaveConfig()
 		m.step = favStepList
 	case "esc":
@@ -154,11 +150,11 @@ func (m Model) updateEdit(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 func (m Model) updateDelete(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "enter":
-		favs := m.store.Config.Favorites
+		favs := m.store.Favorites()
 		if m.cursor < len(favs) {
 			m.store.RemoveFavorite(favs[m.cursor].Label)
 			_ = m.store.SaveConfig()
-			if m.cursor >= len(m.store.Config.Favorites) && m.cursor > 0 {
+			if m.cursor >= len(m.store.Favorites()) && m.cursor > 0 {
 				m.cursor--
 			}
 		}
@@ -209,7 +205,7 @@ func (m Model) View() string {
 	switch m.step {
 	case favStepList:
 		sb.WriteString(m.theme.Title.Render("Favorites") + "\n\n")
-		favs := m.store.Config.Favorites
+		favs := m.store.Favorites()
 		if len(favs) == 0 {
 			sb.WriteString(m.theme.Subtle.Render("  no favorites yet — press n to add one") + "\n")
 		} else {
@@ -266,7 +262,7 @@ func (m Model) View() string {
 			"tab next field  enter save  esc cancel"))
 
 	case favStepDelete:
-		favs := m.store.Config.Favorites
+		favs := m.store.Favorites()
 		name := ""
 		if m.cursor < len(favs) {
 			name = favs[m.cursor].Label

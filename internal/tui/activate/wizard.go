@@ -239,9 +239,6 @@ func (w Wizard) View() string {
 	return sb.String()
 }
 
-// HeaderTitle returns "activate" for the header bar.
-func (w Wizard) HeaderTitle() string { return "activate" }
-
 // advanceFromRoles decides whether to show scope trees or skip straight to options.
 func (w Wizard) advanceFromRoles() (Wizard, tea.Cmd) {
 	// Partition into roles that need scope selection and those that don't.
@@ -280,7 +277,7 @@ func (w Wizard) advanceFromRoles() (Wizard, tea.Cmd) {
 func (w Wizard) scopeOverride(r azure.Role) string {
 	for _, s := range w.deps.ScopeFilter {
 		s = strings.TrimSpace(s)
-		if s != "" && strings.HasPrefix(strings.ToLower(s), strings.ToLower(r.Scope)) {
+		if s != "" && azure.ScopeIsChildOf(s, r.Scope) {
 			return s
 		}
 	}
@@ -309,7 +306,7 @@ func (w Wizard) startOptions() (Wizard, tea.Cmd) {
 	w.options = NewOptions(
 		w.theme, w.keys,
 		defaultMinutes,
-		w.deps.Store.State.RecentJustifications,
+		w.deps.Store.RecentJustifications(),
 		w.deps.Justific,
 	)
 	w.step = stepOptions

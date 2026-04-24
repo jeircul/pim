@@ -94,7 +94,7 @@ func (m Model) View() string {
 	}
 	sb.WriteString("\n")
 
-	favs := m.store.Config.Favorites
+	favs := m.store.Favorites()
 	if len(favs) > 0 {
 		sb.WriteString(m.theme.Bold.Render("Favorites") + "\n")
 		for _, f := range favs {
@@ -129,6 +129,3 @@ func (m Model) View() string {
 
 	return sb.String()
 }
-
-// HeaderTitle returns the title for the header bar.
-func (m Model) HeaderTitle() string { return "pim" }

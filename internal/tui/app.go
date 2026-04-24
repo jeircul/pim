@@ -1,9 +1,14 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
@@ -54,6 +59,8 @@ func titleOf(s Screen) string {
 // AppModel is the root Bubble Tea model.
 type AppModel struct {
 	a               *app.App
+	ctx             context.Context
+	cancel          context.CancelFunc
 	theme           Theme
 	keys            KeyMap
 	screen          Screen
@@ -79,7 +86,7 @@ type userReadyMsg struct {
 }
 
 // New creates the root AppModel. User fetch is deferred to Init().
-func New(a *app.App) (AppModel, error) {
+func New(a *app.App, ctx context.Context, cancel context.CancelFunc) (AppModel, error) {
 	keys := DefaultKeyMap
 	theme := NewTheme(true)
 
@@ -88,6 +95,8 @@ func New(a *app.App) (AppModel, error) {
 
 	return AppModel{
 		a:              a,
+		ctx:            ctx,
+		cancel:         cancel,
 		theme:          theme,
 		keys:           keys,
 		screen:         ScreenDashboard,
@@ -99,7 +108,9 @@ func New(a *app.App) (AppModel, error) {
 // Init initialises the active screen and starts the background user fetch.
 func (m AppModel) Init() tea.Cmd {
 	fetchUser := func() tea.Msg {
-		user, err := m.a.Client.GetCurrentUser()
+		callCtx, callCancel := context.WithTimeout(m.ctx, 30*time.Second)
+		defer callCancel()
+		user, err := m.a.Client.GetCurrentUser(callCtx)
 		if err != nil {
 			return userReadyMsg{err: err}
 		}
@@ -185,6 +196,10 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.startWizard(msg.Favorite)
 
 	case tea.KeyPressMsg:
+		if msg.String() == "ctrl+c" {
+			m.cancel()
+			return m, tea.Quit
+		}
 		if m.showHelp {
 			m.showHelp = false
 			return m, nil
@@ -193,14 +208,14 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// All other screens own their key handling, including esc/q for back/cancel.
 		if m.screen == ScreenDashboard {
 			switch {
-			case msg.String() == "s":
+			case key.Matches(msg, m.keys.Status):
 				return m, m.startStatus()
 			case key.Matches(msg, m.keys.Deactivate):
 				if !m.userReady {
 					return m, nil
 				}
 				return m, m.startDeactivate()
-			case msg.String() == "f":
+			case key.Matches(msg, m.keys.Favorites):
 				m.screen = ScreenFavorites
 				return m, m.favoritesModel.Init()
 			}
@@ -223,7 +238,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	// Toggle help only if the active screen did not consume the key.
 	if cmd == nil {
-		if kp, ok := msg.(tea.KeyPressMsg); ok && kp.String() == "?" {
+		if kp, ok := msg.(tea.KeyPressMsg); ok && key.Matches(kp, m.keys.Help) {
 			m.showHelp = !m.showHelp
 		}
 	}
@@ -233,12 +248,17 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // startStatus constructs a fresh status model and switches to that screen.
 func (m *AppModel) startStatus() tea.Cmd {
 	client := m.a.Client
+	ctx := m.ctx
 	m.statusModel = status.New(m.theme, m.keys, func() ([]azure.ActiveAssignment, []azure.Role, error) {
-		active, err := client.GetActiveAssignments()
+		callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer callCancel()
+		active, err := client.GetActiveAssignments(callCtx)
 		if err != nil {
 			return nil, nil, err
 		}
-		eligible, err := client.GetEligibleRoles()
+		callCtx2, callCancel2 := context.WithTimeout(ctx, 30*time.Second)
+		defer callCancel2()
+		eligible, err := client.GetEligibleRoles(callCtx2)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -259,6 +279,7 @@ func (m *AppModel) startWizard(fav *state.Favorite) tea.Cmd {
 	cfg := m.a.Config
 	principalID := m.principalID
 	client := m.a.Client
+	ctx := m.ctx
 
 	var currentActive []azure.ActiveAssignment
 
@@ -288,16 +309,24 @@ func (m *AppModel) startWizard(fav *state.Favorite) tea.Cmd {
 		AutoSubmit:  cfg.Yes,
 		Store:       m.a.Store,
 		LoadRoles: func() ([]azure.Role, error) {
-			return client.GetEligibleRoles()
+			callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
+			defer callCancel()
+			return client.GetEligibleRoles(callCtx)
 		},
 		LoadSubs: func(mgID string) ([]azure.Subscription, error) {
-			return client.ListManagementGroupSubscriptions(mgID)
+			callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
+			defer callCancel()
+			return client.ListManagementGroupSubscriptions(callCtx, mgID)
 		},
 		LoadRGs: func(subID string) ([]azure.ResourceGroup, error) {
-			return client.ListEligibleResourceGroups(subID)
+			callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
+			defer callCancel()
+			return client.ListEligibleResourceGroups(callCtx, subID)
 		},
 		Activate: func(role azure.Role, pid, justification string, minutes int, targetScope string) error {
-			_, err := client.ActivateRole(role, pid, justification, minutes, targetScope)
+			callCtx, callCancel := context.WithTimeout(ctx, 60*time.Second)
+			defer callCancel()
+			_, err := client.ActivateRole(callCtx, role, pid, justification, minutes, targetScope)
 			return err
 		},
 	}
@@ -316,16 +345,21 @@ func (m *AppModel) startDeactivate() tea.Cmd {
 	}
 	principalID := m.principalID
 	client := m.a.Client
+	ctx := m.ctx
 
 	m.deactivateModel = deactivate.New(
 		m.theme,
 		m.keys,
 		principalID,
 		func() ([]azure.ActiveAssignment, error) {
-			return client.GetActiveAssignments()
+			callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
+			defer callCancel()
+			return client.GetActiveAssignments(callCtx)
 		},
 		func(assignment azure.ActiveAssignment, pid string) error {
-			_, err := client.DeactivateRole(assignment, pid)
+			callCtx, callCancel := context.WithTimeout(ctx, 60*time.Second)
+			defer callCancel()
+			_, err := client.DeactivateRole(callCtx, assignment, pid)
 			return err
 		},
 	)
@@ -353,7 +387,7 @@ func (m AppModel) View() tea.View {
 
 	var body string
 	if m.showHelp {
-		body = components.RenderHelp(m.theme, m.width)
+		body = components.RenderHelp(m.theme, m.keys, m.width)
 	} else {
 		switch m.screen {
 		case ScreenActivate:
@@ -383,7 +417,9 @@ func (m AppModel) View() tea.View {
 
 // Run starts the Bubble Tea program.
 func Run(a *app.App) error {
-	model, err := New(a)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	model, err := New(a, ctx, cancel)
 	if err != nil {
 		return err
 	}
