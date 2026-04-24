@@ -60,21 +60,33 @@ pim activate \
 ### 🤖 Headless mode (scripting / CI)
 
 ```sh
-# Activate — all four flags required
+# Activate — only --role is required; --time defaults to 1h, --scope to the
+# eligibility scope, --justification may be empty
 pim activate --headless \
   --role Reader \
   --scope /subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx \
   --time 1h \
   --justification "Deploy pipeline"
 
-# Deactivate matching assignments
+# Deactivate matching assignments (--role/--scope or --yes required to avoid
+# accidentally deactivating everything; inherited group assignments are skipped)
 pim deactivate --headless --role Reader
 
 # Status — JSON output
 pim status --headless --output json
 ```
 
-Exit code `0` on success, `1` on error.
+Exit code `0` on success, `1` on error, `130` on user cancel (Ctrl-C).
+
+#### Matching policy for `--role` and `--scope`
+
+Both flags resolve in two passes:
+
+1. **Exact match** wins. `--scope my-rg` matches `my-rg` even if `my-rg-dev` also exists.
+2. **Substring fallback** if no exact match. `--role admin` matches anything containing "admin".
+3. **Ambiguity errors out.** If multiple values match by substring with no exact match, the command exits non-zero and lists the candidates instead of silently picking one.
+
+ARM scope paths (`/subscriptions/...`) take precedence over display-name matching.
 
 ## 🐚 Shell completions
 
@@ -161,8 +173,8 @@ task clean    # remove build artefacts
 ## 📤 Release
 
 ```sh
-git tag v2.0.0
-git push origin v2.0.0
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
 
 GoReleaser builds cross-platform archives (linux, darwin, windows — amd64 + arm64) and attaches them to the GitHub release automatically.
