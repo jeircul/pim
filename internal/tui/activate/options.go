@@ -89,9 +89,6 @@ func (m Options) Update(msg tea.Msg) (Options, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		if m.focusJust {
-			// Text input mode: all keys type into the justification field except
-			// the special keys below. Always return a consumed signal so parent
-			// models (wizard, app) know not to intercept this key.
 			switch msg.String() {
 			case "tab":
 				m.focusJust = false
@@ -170,6 +167,9 @@ func (m Options) Update(msg tea.Msg) (Options, tea.Cmd) {
 
 	return m, nil
 }
+
+// Editing reports whether the justification text field has focus.
+func (m Options) Editing() bool { return m.focusJust }
 
 // View renders the options step.
 func (m Options) View() string {

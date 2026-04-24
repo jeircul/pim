@@ -251,7 +251,7 @@ func (m Model) View() string {
 	}
 	if len(m.items) == 0 {
 		sb.WriteString(m.theme.Subtle.Render("no active elevations to deactivate") + "\n")
-		hints := []key.Binding{m.keys.Back, m.keys.Quit}
+		hints := []key.Binding{m.keys.Back}
 		sb.WriteString(components.RenderStatusBar(m.theme.HelpKey, m.theme.HelpDesc, m.theme.Subtle, hints, ""))
 		return sb.String()
 	}
@@ -278,7 +278,7 @@ func (m Model) View() string {
 		if n > 0 {
 			sb.WriteString("\n" + m.theme.Subtle.Render(fmt.Sprintf("%d selected", n)) + "\n")
 		}
-		hints := []key.Binding{m.keys.Up, m.keys.Down, m.keys.Enter, m.keys.Back, m.keys.Quit}
+		hints := []key.Binding{m.keys.Up, m.keys.Down, m.keys.Enter, m.keys.Back}
 		sb.WriteString(components.RenderStatusBar(m.theme.HelpKey, m.theme.HelpDesc, m.theme.Subtle, hints,
 			"space toggle  → confirm"))
 
@@ -304,7 +304,7 @@ func (m Model) View() string {
 				it.assignment.RoleName, scope, stateStr))
 		}
 		sb.WriteString("\n")
-		hints := []key.Binding{m.keys.Enter, m.keys.Back, m.keys.Quit}
+		hints := []key.Binding{m.keys.Enter, m.keys.Back}
 		sb.WriteString(components.RenderStatusBar(m.theme.HelpKey, m.theme.HelpDesc, m.theme.Subtle, hints,
 			"enter confirm  ← back  q cancel"))
 	}

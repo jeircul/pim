@@ -116,9 +116,6 @@ func (m AppModel) Init() tea.Cmd {
 		}
 		return userReadyMsg{principalID: user.ID}
 	}
-	// For headless commands the actual screen transition is deferred until
-	// userReadyMsg arrives (principalID is required for all PIM API calls).
-	// For the default dashboard path, start the dashboard immediately.
 	if m.a.Config.Command == "" {
 		return tea.Batch(fetchUser, m.dashboardModel.Init())
 	}
@@ -156,12 +153,10 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	// Status results.
 	case status.CancelMsg:
 		m.screen = ScreenDashboard
 		return m, nil
 
-	// Activation wizard results.
 	case activate.WizardDoneMsg:
 		m.exitSummary, m.exitErr = buildActivationSummary(msg.Results)
 		return m, tea.Quit
@@ -170,7 +165,6 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screen = ScreenDashboard
 		return m, nil
 
-	// Deactivation results.
 	case deactivate.DoneMsg:
 		m.exitSummary, m.exitErr = buildDeactivationSummary(msg.Results)
 		return m, tea.Quit
@@ -179,7 +173,6 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screen = ScreenDashboard
 		return m, nil
 
-	// Favorites results.
 	case favorites.DoneMsg:
 		m.screen = ScreenDashboard
 		return m, nil
@@ -188,7 +181,6 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		fav := msg.Favorite
 		return m, m.startWizard(&fav)
 
-	// Dashboard activation shortcut.
 	case dashboard.ActivateMsg:
 		if !m.userReady {
 			return m, nil
@@ -222,30 +214,29 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Delegate to active screen.
 	var cmd tea.Cmd
+	editing := false
 	switch m.screen {
 	case ScreenActivate:
 		m.wizardModel, cmd = m.wizardModel.Update(msg)
+		editing = m.wizardModel.Editing()
 	case ScreenStatus:
 		m.statusModel, cmd = m.statusModel.Update(msg)
 	case ScreenDeactivate:
 		m.deactivateModel, cmd = m.deactivateModel.Update(msg)
 	case ScreenFavorites:
 		m.favoritesModel, cmd = m.favoritesModel.Update(msg)
+		editing = m.favoritesModel.Editing()
 	default:
 		m.dashboardModel, cmd = m.dashboardModel.Update(msg)
 	}
-	// Toggle help only if the active screen did not consume the key.
-	if cmd == nil {
+	if !editing {
 		if kp, ok := msg.(tea.KeyPressMsg); ok && key.Matches(kp, m.keys.Help) {
 			m.showHelp = !m.showHelp
 		}
 	}
 	return m, cmd
-}
-
-// startStatus constructs a fresh status model and switches to that screen.
+} // startStatus constructs a fresh status model and switches to that screen.
 func (m *AppModel) startStatus() tea.Cmd {
 	client := m.a.Client
 	ctx := m.ctx
@@ -281,8 +272,6 @@ func (m *AppModel) startWizard(fav *state.Favorite) tea.Cmd {
 	client := m.a.Client
 	ctx := m.ctx
 
-	var currentActive []azure.ActiveAssignment
-
 	roleFilter := cfg.Roles
 	scopeFilter := cfg.Scopes
 	timeStr := cfg.TimeStr
@@ -301,7 +290,6 @@ func (m *AppModel) startWizard(fav *state.Favorite) tea.Cmd {
 
 	deps := activate.Deps{
 		PrincipalID: principalID,
-		Active:      currentActive,
 		RoleFilter:  roleFilter,
 		ScopeFilter: scopeFilter,
 		TimeStr:     timeStr,
@@ -312,6 +300,11 @@ func (m *AppModel) startWizard(fav *state.Favorite) tea.Cmd {
 			callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
 			defer callCancel()
 			return client.GetEligibleRoles(callCtx)
+		},
+		LoadActive: func() ([]azure.ActiveAssignment, error) {
+			callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
+			defer callCancel()
+			return client.GetActiveAssignments(callCtx)
 		},
 		LoadSubs: func(mgID string) ([]azure.Subscription, error) {
 			callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)

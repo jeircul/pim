@@ -48,6 +48,7 @@ type Model struct {
 	editFld editField
 	width   int
 	height  int
+	saveErr error
 }
 
 // New creates a favorites Model.
@@ -62,6 +63,10 @@ func New(theme styles.Theme, keys styles.KeyMap, store *state.Store) Model {
 
 // Init is a no-op.
 func (m Model) Init() tea.Cmd { return nil }
+
+// Editing reports whether the model is in a text-input mode that should
+// swallow global hotkeys (such as ?, q).
+func (m Model) Editing() bool { return m.step == favStepEdit }
 
 // Update handles messages.
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
@@ -133,7 +138,11 @@ func (m Model) updateEdit(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		}
 	case "enter":
 		m.store.UpsertFavorite(m.edit)
-		_ = m.store.SaveConfig()
+		if err := m.store.SaveConfig(); err != nil {
+			m.saveErr = fmt.Errorf("save favorite: %w", err)
+		} else {
+			m.saveErr = nil
+		}
 		m.step = favStepList
 	case "esc":
 		m.step = favStepList
@@ -153,7 +162,11 @@ func (m Model) updateDelete(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		favs := m.store.Favorites()
 		if m.cursor < len(favs) {
 			m.store.RemoveFavorite(favs[m.cursor].Label)
-			_ = m.store.SaveConfig()
+			if err := m.store.SaveConfig(); err != nil {
+				m.saveErr = fmt.Errorf("delete favorite: %w", err)
+			} else {
+				m.saveErr = nil
+			}
 			if m.cursor >= len(m.store.Favorites()) && m.cursor > 0 {
 				m.cursor--
 			}
@@ -224,6 +237,9 @@ func (m Model) View() string {
 			}
 		}
 		sb.WriteString("\n")
+		if m.saveErr != nil {
+			sb.WriteString(m.theme.DangerText.Render(m.saveErr.Error()) + "\n\n")
+		}
 		hints := []key.Binding{m.keys.Up, m.keys.Down, m.keys.Enter, m.keys.Back}
 		sb.WriteString(components.RenderStatusBar(m.theme.HelpKey, m.theme.HelpDesc, m.theme.Subtle, hints,
 			"n new  e edit  x delete  enter activate"))

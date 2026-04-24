@@ -107,11 +107,13 @@ func Parse(args []string) (Config, error) {
 	cfg.Roles = []string(roles)
 	cfg.Scopes = []string(scopes)
 
-	switch strings.ToLower(outStr) {
+	switch strings.ToLower(strings.TrimSpace(outStr)) {
+	case "table":
+		cfg.Output = OutputTable
 	case "json":
 		cfg.Output = OutputJSON
 	default:
-		cfg.Output = OutputTable
+		return cfg, fmt.Errorf("invalid --output %q: must be table or json", outStr)
 	}
 
 	return cfg, nil

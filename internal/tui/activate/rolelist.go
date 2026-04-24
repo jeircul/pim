@@ -18,20 +18,21 @@ type RoleListDoneMsg struct {
 
 // RoleList is Step 1 of the activation wizard: filterable single-select role list.
 type RoleList struct {
-	theme     styles.Theme
-	keys      styles.KeyMap
-	spinner   components.Spinner
-	roles     []azure.Role    // full unfiltered list
-	visible   []int           // indices into roles matching filter
-	active    map[string]bool // role definition IDs that are currently active
-	filter    string
-	filtering bool
-	cursor    int
-	loading   bool
-	err       error
-	width     int
-	height    int
-	loadFunc  func() ([]azure.Role, error)
+	theme        styles.Theme
+	keys         styles.KeyMap
+	spinner      components.Spinner
+	roles        []azure.Role    // full unfiltered list
+	visible      []int           // indices into roles matching filter
+	active       map[string]bool // role definition IDs that are currently active
+	filter       string
+	filtering    bool
+	cursor       int
+	loading      bool
+	err          error
+	width        int
+	height       int
+	loadFunc     func() ([]azure.Role, error)
+	loadActiveFn func() ([]azure.ActiveAssignment, error)
 	// roleFilter auto-advances when a single --role flag match is found
 	roleFilter []string
 }
@@ -40,39 +41,55 @@ type RoleList struct {
 func NewRoleList(
 	theme styles.Theme,
 	keys styles.KeyMap,
-	active []azure.ActiveAssignment,
+	loadActive func() ([]azure.ActiveAssignment, error),
 	roleFilter []string,
 	loadFunc func() ([]azure.Role, error),
 ) RoleList {
-	activeIDs := make(map[string]bool, len(active))
-	for _, a := range active {
-		activeIDs[a.RoleDefinitionID] = true
-	}
 	return RoleList{
-		theme:      theme,
-		keys:       keys,
-		spinner:    components.NewSpinner(theme.Active),
-		active:     activeIDs,
-		loading:    true,
-		loadFunc:   loadFunc,
-		roleFilter: roleFilter,
+		theme:        theme,
+		keys:         keys,
+		spinner:      components.NewSpinner(theme.Active),
+		active:       map[string]bool{},
+		loading:      true,
+		loadFunc:     loadFunc,
+		loadActiveFn: loadActive,
+		roleFilter:   roleFilter,
 	}
 }
 
-// Init starts the spinner and loads eligible roles.
+// Init starts the spinner and loads eligible roles plus active assignments
+// in parallel. The active set is used to render an "(active)" indicator.
 func (m RoleList) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Init(),
 		func() tea.Msg {
-			roles, err := m.loadFunc()
-			return roleListLoadMsg{roles: roles, err: err}
+			var (
+				roles    []azure.Role
+				active   []azure.ActiveAssignment
+				rolesErr error
+			)
+			done := make(chan struct{}, 2)
+			go func() {
+				roles, rolesErr = m.loadFunc()
+				done <- struct{}{}
+			}()
+			go func() {
+				if m.loadActiveFn != nil {
+					active, _ = m.loadActiveFn()
+				}
+				done <- struct{}{}
+			}()
+			<-done
+			<-done
+			return roleListLoadMsg{roles: roles, active: active, err: rolesErr}
 		},
 	)
 }
 
 type roleListLoadMsg struct {
-	roles []azure.Role
-	err   error
+	roles  []azure.Role
+	active []azure.ActiveAssignment
+	err    error
 }
 
 // Update handles messages.
@@ -86,6 +103,9 @@ func (m RoleList) Update(msg tea.Msg) (RoleList, tea.Cmd) {
 		m.loading = false
 		m.err = msg.err
 		m.roles = msg.roles
+		for _, a := range msg.active {
+			m.active[a.RoleDefinitionID] = true
+		}
 		m.applyFilter()
 		// Auto-advance: if --role flag matches exactly one visible role, select it.
 		if cmd := m.autoAdvance(); cmd != nil {
@@ -196,6 +216,9 @@ func (m *RoleList) autoAdvance() tea.Cmd {
 	r := matches[0]
 	return func() tea.Msg { return RoleListDoneMsg{Selected: []azure.Role{r}} }
 }
+
+// Editing reports whether the filter text field is active.
+func (m RoleList) Editing() bool { return m.filtering }
 
 // View renders the role list step.
 func (m RoleList) View() string {

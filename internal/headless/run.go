@@ -231,28 +231,29 @@ func filterAssignments(assignments []azure.ActiveAssignment, roleFilters, scopeF
 		return assignments, nil
 	}
 
-	roleNames := make([]string, len(assignments))
-	for i, a := range assignments {
-		roleNames[i] = a.RoleName
+	allowRole := make([]bool, len(assignments))
+	if len(roleFilters) == 0 {
+		for i := range allowRole {
+			allowRole[i] = true
+		}
+	} else {
+		roleNames := make([]string, len(assignments))
+		for i, a := range assignments {
+			roleNames[i] = a.RoleName
+		}
+		idx, err := selectByFilter(roleNames, roleFilters, "--role")
+		if err != nil {
+			return nil, err
+		}
+		for _, j := range idx {
+			allowRole[j] = true
+		}
 	}
 
 	var out []azure.ActiveAssignment
 	for i, a := range assignments {
-		if len(roleFilters) > 0 {
-			idx, err := selectByFilter(roleNames, roleFilters, "--role")
-			if err != nil {
-				return nil, err
-			}
-			found := false
-			for _, j := range idx {
-				if j == i {
-					found = true
-					break
-				}
-			}
-			if !found {
-				continue
-			}
+		if !allowRole[i] {
+			continue
 		}
 		if len(scopeFilters) > 0 {
 			scopeMatch := false

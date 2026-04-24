@@ -165,7 +165,7 @@ func (m Model) View() string {
 	}
 
 	sb.WriteString("\n")
-	hints := []key.Binding{m.keys.Up, m.keys.Down, m.keys.Refresh, m.keys.Back, m.keys.Quit}
+	hints := []key.Binding{m.keys.Up, m.keys.Down, m.keys.Refresh, m.keys.Back}
 	sb.WriteString(components.RenderStatusBar(m.theme.HelpKey, m.theme.HelpDesc, m.theme.Subtle, hints, ""))
 
 	return sb.String()

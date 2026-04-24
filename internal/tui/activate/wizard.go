@@ -30,7 +30,6 @@ const (
 // Deps groups external dependencies injected into the Wizard.
 type Deps struct {
 	PrincipalID string
-	Active      []azure.ActiveAssignment
 	RoleFilter  []string // from --role flags
 	ScopeFilter []string // from --scope flags
 	TimeStr     string   // from --time flag
@@ -38,6 +37,7 @@ type Deps struct {
 	AutoSubmit  bool     // from --yes flag
 	Store       *state.Store
 	LoadRoles   func() ([]azure.Role, error)
+	LoadActive  func() ([]azure.ActiveAssignment, error)
 	LoadSubs    func(mgID string) ([]azure.Subscription, error)
 	LoadRGs     func(subID string) ([]azure.ResourceGroup, error)
 	Activate    func(role azure.Role, principalID, justification string, minutes int, targetScope string) error
@@ -71,13 +71,24 @@ type Wizard struct {
 // New creates a Wizard. Call Init() to start.
 func New(theme styles.Theme, keys styles.KeyMap, deps Deps) Wizard {
 	w := Wizard{theme: theme, keys: keys, deps: deps}
-	w.roleList = NewRoleList(theme, keys, deps.Active, deps.RoleFilter, deps.LoadRoles)
+	w.roleList = NewRoleList(theme, keys, deps.LoadActive, deps.RoleFilter, deps.LoadRoles)
 	return w
 }
 
 // Init starts the first step (or fast-forwards if flags allow).
 func (w Wizard) Init() tea.Cmd {
 	return w.roleList.Init()
+}
+
+// Editing reports whether the active step is in a text-input mode.
+func (w Wizard) Editing() bool {
+	switch w.step {
+	case stepRoleList:
+		return w.roleList.Editing()
+	case stepOptions:
+		return w.options.Editing()
+	}
+	return false
 }
 
 // Update routes messages to the active step.
