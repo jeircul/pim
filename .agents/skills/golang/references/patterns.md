@@ -274,3 +274,130 @@ Shell completions live in `internal/completion/completion.go`. Generated at rele
 `.goreleaser.yaml` — do not invoke completion logic in normal TUI flow.
 
 Flag names are the source of truth: keep `internal/app/config.go` and completion scripts in sync.
+
+## ARM scope matching precedence
+
+`internal/azure/scopes.go` defines the canonical matching contract used by both `wizard.scopeOverride` and `rolelist.autoAdvance`.
+
+**Rule**: ARM child-path check first, display-name substring fallback second.
+
+```go
+// ScopeMatches reports whether filter matches a role's scope.
+// ARM child-path check runs first; display-name substring is the fallback.
+func ScopeMatches(filter, scope, scopeDisplay string) bool {
+    f := strings.TrimSpace(filter)
+    if f == "" {
+        return false
+    }
+    if ScopeIsChildOf(f, scope) {
+        return true
+    }
+    lower := strings.ToLower(f)
+    return strings.Contains(strings.ToLower(scopeDisplay), lower) ||
+        strings.Contains(strings.ToLower(scope), lower)
+}
+
+// ScopeIsChildOf reports whether child is equal to or a descendant of parent.
+// Case-insensitive, segment-boundary match.
+func ScopeIsChildOf(child, parent string) bool {
+    c := strings.ToLower(strings.TrimRight(child, "/"))
+    p := strings.ToLower(strings.TrimRight(parent, "/"))
+    return c == p || strings.HasPrefix(c, p+"/")
+}
+```
+
+`scopeOverride` in `wizard.go:290` and `autoAdvance` in `rolelist.go:202` both use this contract. When adding new scope-matching logic, call `azure.ScopeMatches` — don't inline the logic again.
+
+---
+
+## Parallel async load in Init()
+
+Two-shot `done` channel for fan-out/fan-in of exactly N concurrent loads inside a `tea.Cmd`. No `sync.WaitGroup` needed for small N.
+
+```go
+// From rolelist.go Init() — loads roles and active assignments in parallel.
+func (m RoleList) Init() tea.Cmd {
+    return tea.Batch(
+        m.spinner.Init(),
+        func() tea.Msg {
+            var roles []azure.Role
+            var active []azure.ActiveAssignment
+            var rolesErr error
+            done := make(chan struct{}, 2)
+            go func() {
+                roles, rolesErr = m.loadFunc()
+                done <- struct{}{}
+            }()
+            go func() {
+                if m.loadActiveFn != nil {
+                    active, _ = m.loadActiveFn()
+                }
+                done <- struct{}{}
+            }()
+            <-done
+            <-done
+            return roleListLoadMsg{roles: roles, active: active, err: rolesErr}
+        },
+    )
+}
+```
+
+Use a buffered channel of size N. Both goroutines send; the outer func receives N times. Results are collected into a single message type returned to `Update`.
+
+---
+
+## favoritePending exit-routing sentinel
+
+A single `bool` on the root model distinguishes wizard entry points with different exit semantics. Pattern applies whenever the same sub-flow has multiple callers that need different post-completion behaviour.
+
+```go
+// AppModel field:
+favoritePending bool
+
+// Set at call site — only the dashboard shortcut path sets it:
+case dashboard.ActivateMsg:
+    cmd := m.startWizard(msg.Favorite, msg.Favorite != nil && msg.Favorite.Complete())
+    // autoSubmit=true also sets m.favoritePending=true inside startWizard
+
+// WizardDoneMsg handler branches on the flag:
+case activate.WizardDoneMsg:
+    if m.favoritePending {
+        m.favoritePending = false
+        summary, err := buildActivationSummary(msg.Results)
+        m.dashboardModel.SetNotice(strings.TrimRight(summary, "\n"), err != nil)
+        m.screen = ScreenDashboard
+        return m, nil
+    }
+    m.exitSummary, m.exitErr = buildActivationSummary(msg.Results)
+    return m, tea.Quit
+
+// MUST also clear on cancel — or it leaks into the next activation:
+case activate.WizardCancelMsg:
+    m.favoritePending = false
+    m.screen = ScreenDashboard
+    return m, nil
+```
+
+---
+
+## ErrSilent exit pattern
+
+Typed sentinel error so `main` knows the error was already printed to stdout. Caller exits 1 without printing again.
+
+```go
+// In tui/app.go:
+var ErrSilent = errors.New("silent")
+
+// Set when activation completed with failures already printed:
+m.exitErr = ErrSilent
+
+// In main.go:
+if err := run(); err != nil {
+    if !errors.Is(err, tui.ErrSilent) {
+        fmt.Fprintln(os.Stderr, err)
+    }
+    os.Exit(1)
+}
+```
+
+Avoids the common anti-pattern of `os.Exit(1)` inside library code or double-printing errors.
