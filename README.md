@@ -131,22 +131,24 @@ Example `config.toml`:
 default_duration = "2h"   # default when no --time flag or favorite duration is set
 
 [[favorites]]
-label    = "Prod reader"
-role     = "Reader"
-scope    = "my-prod-subscription"
-duration = "1h"            # overrides default_duration for this favorite
-key      = 1
+label         = "Prod reader"
+role          = "Reader"
+scope         = "my-prod-subscription"
+duration      = "1h"      # overrides default_duration for this favorite
+justification = "Daily read access"
+key           = 1
 
 [[favorites]]
 label = "Dev owner"
 role  = "Owner"
 scope = "my-dev-subscription"
-# duration omitted — falls back to default_duration
+# duration and justification omitted — opens wizard at the missing step
 key   = 2
 ```
 
-Scope can be a full ARM path or a display name — the TUI resolves either.
-`label` is required. All other fields are optional and fall back to defaults or wizard prompts.
+`scope` accepts a full ARM path (`/subscriptions/…`) or a display-name substring — the TUI resolves either.
+
+`label` is required. When `role`, `scope`, `duration`, and `justification` are all set, pressing the shortcut key activates immediately with no prompts and returns to the dashboard with a result notice. If any field is missing the shortcut shows an error notice; open the favorite in the favorites editor (`f`) to complete it.
 
 ## 🛠️ Development
 

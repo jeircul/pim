@@ -31,6 +31,8 @@ type Model struct {
 	store     *state.Store
 	userReady bool
 	authErr   string
+	notice    string
+	noticeErr bool
 	width     int
 	height    int
 }
@@ -51,6 +53,9 @@ func (m *Model) SetReady() { m.userReady = true; m.authErr = "" }
 // SetAuthErr records an authentication failure message to display.
 func (m *Model) SetAuthErr(msg string) { m.authErr = msg }
 
+// SetNotice sets an informational or error notice to display on the dashboard.
+func (m *Model) SetNotice(msg string, isErr bool) { m.notice = msg; m.noticeErr = isErr }
+
 // Init is a no-op — the landing screen loads no data.
 func (m Model) Init() tea.Cmd { return nil }
 
@@ -62,6 +67,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.height = msg.Height
 
 	case tea.KeyPressMsg:
+		m.notice = ""
+		m.noticeErr = false
 		switch {
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
@@ -75,6 +82,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			if len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
 				n := int(s[0] - '0')
 				if fav, ok := m.store.FavoriteByKey(n); ok {
+					if !fav.Complete() {
+						m.notice = fmt.Sprintf("favorite %q incomplete: missing %s", fav.Label, fav.MissingFields())
+						m.noticeErr = true
+						return m, nil
+					}
 					return m, func() tea.Msg { return ActivateMsg{Favorite: &fav} }
 				}
 			}
@@ -109,6 +121,14 @@ func (m Model) View() string {
 			sb.WriteString(line + "\n")
 		}
 		sb.WriteString("\n")
+	}
+
+	if m.notice != "" {
+		style := lipgloss.NewStyle().Foreground(m.theme.Success)
+		if m.noticeErr {
+			style = lipgloss.NewStyle().Foreground(m.theme.Danger)
+		}
+		sb.WriteString(style.Render(m.notice) + "\n\n")
 	}
 
 	if m.authErr != "" {

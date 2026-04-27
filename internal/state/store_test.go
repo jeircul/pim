@@ -31,8 +31,8 @@ func TestStoreFavorites(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s.UpsertFavorite(Favorite{Label: "prod", Role: "Reader", Scope: "/subscriptions/abc", Duration: "1h", Key: 1})
-	s.UpsertFavorite(Favorite{Label: "dev", Role: "Owner", Scope: "/subscriptions/xyz", Duration: "2h", Key: 2})
+	s.UpsertFavorite(Favorite{Label: "prod", Role: "Reader", Scope: "/subscriptions/abc", Duration: "1h", Justification: "test reason", Key: 1})
+	s.UpsertFavorite(Favorite{Label: "dev", Role: "Owner", Scope: "/subscriptions/xyz", Duration: "2h", Justification: "test reason", Key: 2})
 
 	f, ok := s.FavoriteByKey(1)
 	if !ok || f.Label != "prod" {
@@ -40,7 +40,7 @@ func TestStoreFavorites(t *testing.T) {
 	}
 
 	// Update
-	s.UpsertFavorite(Favorite{Label: "prod", Role: "Contributor", Scope: "/subscriptions/abc", Duration: "1h", Key: 1})
+	s.UpsertFavorite(Favorite{Label: "prod", Role: "Contributor", Scope: "/subscriptions/abc", Duration: "1h", Justification: "test reason", Key: 1})
 	f, _ = s.FavoriteByKey(1)
 	if f.Role != "Contributor" {
 		t.Fatalf("expected updated role Contributor, got %q", f.Role)
@@ -99,7 +99,7 @@ func TestStoreConfigPersistence(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s.UpsertFavorite(Favorite{Label: "test", Role: "Reader", Scope: "/sub/abc", Duration: "1h", Key: 3})
+	s.UpsertFavorite(Favorite{Label: "test", Role: "Reader", Scope: "/sub/abc", Duration: "1h", Justification: "test reason", Key: 3})
 	if err := s.SaveConfig(); err != nil {
 		t.Fatal(err)
 	}
@@ -111,6 +111,46 @@ func TestStoreConfigPersistence(t *testing.T) {
 	f, ok := s2.FavoriteByKey(3)
 	if !ok || f.Label != "test" {
 		t.Fatalf("expected persisted favorite, got ok=%v label=%q", ok, f.Label)
+	}
+	if f.Justification != "test reason" {
+		t.Fatalf("expected persisted justification %q, got %q", "test reason", f.Justification)
+	}
+}
+
+func TestFavoriteComplete(t *testing.T) {
+	tests := []struct {
+		name string
+		fav  Favorite
+		want bool
+	}{
+		{
+			name: "all fields set",
+			fav:  Favorite{Role: "Reader", Scope: "/sub/abc", Duration: "1h", Justification: "reason"},
+			want: true,
+		},
+		{
+			name: "missing justification",
+			fav:  Favorite{Role: "Reader", Scope: "/sub/abc", Duration: "1h"},
+			want: false,
+		},
+		{
+			name: "missing role",
+			fav:  Favorite{Scope: "/sub/abc", Duration: "1h", Justification: "reason"},
+			want: false,
+		},
+		{
+			name: "all empty",
+			fav:  Favorite{},
+			want: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.fav.Complete()
+			if got != tc.want {
+				t.Errorf("Complete() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

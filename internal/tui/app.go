@@ -71,6 +71,7 @@ type AppModel struct {
 	favoritesModel  favorites.Model
 	principalID     string
 	userReady       bool
+	favoritePending bool
 	width           int
 	height          int
 	isDark          bool
@@ -158,6 +159,14 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case activate.WizardDoneMsg:
+		if m.favoritePending {
+			m.favoritePending = false
+			summary, err := buildActivationSummary(msg.Results)
+			notice := strings.TrimRight(summary, "\n")
+			m.dashboardModel.SetNotice(notice, err != nil)
+			m.screen = ScreenDashboard
+			return m, nil
+		}
 		m.exitSummary, m.exitErr = buildActivationSummary(msg.Results)
 		return m, tea.Quit
 
@@ -322,6 +331,14 @@ func (m *AppModel) startWizard(fav *state.Favorite) tea.Cmd {
 			_, err := client.ActivateRole(callCtx, role, pid, justification, minutes, targetScope)
 			return err
 		},
+	}
+
+	if fav != nil && fav.Justification != "" && deps.Justific == "" {
+		deps.Justific = fav.Justification
+	}
+	if fav != nil && fav.Complete() {
+		deps.AutoSubmit = true
+		m.favoritePending = true
 	}
 
 	m.wizardModel = activate.New(m.theme, m.keys, deps)
