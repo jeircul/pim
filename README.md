@@ -128,24 +128,25 @@ Example `config.toml`:
 
 ```toml
 [preferences]
-default_duration = "1h"
+default_duration = "2h"   # default when no --time flag or favorite duration is set
 
 [[favorites]]
-label = "Prod reader"
-role  = "Reader"
-scope = "/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-duration = "1h"
-key  = 1
+label    = "Prod reader"
+role     = "Reader"
+scope    = "my-prod-subscription"
+duration = "1h"            # overrides default_duration for this favorite
+key      = 1
 
 [[favorites]]
 label = "Dev owner"
 role  = "Owner"
-scope = "/subscriptions/yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
-duration = "2h"
-key  = 2
+scope = "my-dev-subscription"
+# duration omitted — falls back to default_duration
+key   = 2
 ```
 
 Scope can be a full ARM path or a display name — the TUI resolves either.
+`label` is required. All other fields are optional and fall back to defaults or wizard prompts.
 
 ## 🛠️ Development
 
