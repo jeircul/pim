@@ -78,7 +78,7 @@ _pim() {
     esac
 }
 
-_pim
+compdef _pim pim
 `)
 }
 
