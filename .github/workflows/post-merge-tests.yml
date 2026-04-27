@@ -35,8 +35,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
-      - name: Tidy modules
-        run: go mod tidy
+      - name: Verify modules
+        run: |
+          go mod download
+          go mod verify
+          git diff --exit-code go.mod go.sum
 
       - name: Run tests
         id: run-tests

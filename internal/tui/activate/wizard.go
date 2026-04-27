@@ -71,7 +71,7 @@ type Wizard struct {
 // New creates a Wizard. Call Init() to start.
 func New(theme styles.Theme, keys styles.KeyMap, deps Deps) Wizard {
 	w := Wizard{theme: theme, keys: keys, deps: deps}
-	w.roleList = NewRoleList(theme, keys, deps.LoadActive, deps.RoleFilter, deps.LoadRoles)
+	w.roleList = NewRoleList(theme, keys, deps.LoadActive, deps.RoleFilter, deps.ScopeFilter, deps.LoadRoles)
 	return w
 }
 

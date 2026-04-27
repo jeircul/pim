@@ -35,6 +35,15 @@ task fmt && task test && task build   # before every commit (test runs -race)
 task install                          # install to ~/.local/bin
 ```
 
+If `go mod tidy` fails with `x509: certificate signed by unknown authority` (corporate TLS proxy), extract the intercepting CA and set `SSL_CERT_FILE`:
+
+```bash
+echo | openssl s_client -connect proxy.golang.org:443 -showcerts 2>/dev/null \
+  | awk '/-----BEGIN CERTIFICATE-----/{c++} c==2,/-----END CERTIFICATE-----/' > /tmp/corp-ca.pem
+cat /etc/ssl/certs/ca-certificates.crt /tmp/corp-ca.pem > /tmp/ca-bundle.crt
+GOTOOLCHAIN=local SSL_CERT_FILE=/tmp/ca-bundle.crt go mod tidy
+```
+
 ## Rules
 
 - `internal/` only. No `pkg/`, no Cobra/urfave, no testify, no logging libs.
