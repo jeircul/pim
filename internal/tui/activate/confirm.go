@@ -215,3 +215,10 @@ func (m Confirm) View() string {
 
 	return sb.String()
 }
+
+func pluralf(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
+}

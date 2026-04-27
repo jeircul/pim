@@ -34,7 +34,8 @@ type RoleList struct {
 	loadFunc     func() ([]azure.Role, error)
 	loadActiveFn func() ([]azure.ActiveAssignment, error)
 	// roleFilter auto-advances when a single --role flag match is found
-	roleFilter []string
+	roleFilter  []string
+	scopeFilter []string
 }
 
 // NewRoleList creates a RoleList model.
@@ -43,6 +44,7 @@ func NewRoleList(
 	keys styles.KeyMap,
 	loadActive func() ([]azure.ActiveAssignment, error),
 	roleFilter []string,
+	scopeFilter []string,
 	loadFunc func() ([]azure.Role, error),
 ) RoleList {
 	return RoleList{
@@ -54,6 +56,7 @@ func NewRoleList(
 		loadFunc:     loadFunc,
 		loadActiveFn: loadActive,
 		roleFilter:   roleFilter,
+		scopeFilter:  scopeFilter,
 	}
 }
 
@@ -210,11 +213,26 @@ func (m *RoleList) autoAdvance() tea.Cmd {
 			}
 		}
 	}
-	if len(matches) != 1 {
-		return nil
+	if len(matches) == 1 {
+		r := matches[0]
+		return func() tea.Msg { return RoleListDoneMsg{Selected: []azure.Role{r}} }
 	}
-	r := matches[0]
-	return func() tea.Msg { return RoleListDoneMsg{Selected: []azure.Role{r}} }
+	if len(matches) > 1 && len(m.scopeFilter) > 0 {
+		var narrowed []azure.Role
+		for _, r := range matches {
+			for _, sf := range m.scopeFilter {
+				if azure.ScopeMatches(sf, r.Scope, r.ScopeDisplay) {
+					narrowed = append(narrowed, r)
+					break
+				}
+			}
+		}
+		if len(narrowed) == 1 {
+			r := narrowed[0]
+			return func() tea.Msg { return RoleListDoneMsg{Selected: []azure.Role{r}} }
+		}
+	}
+	return nil
 }
 
 // Editing reports whether the filter text field is active.
@@ -263,11 +281,4 @@ func (m RoleList) View() string {
 		"/ filter  → activate"))
 
 	return sb.String()
-}
-
-func pluralf(n int, noun string) string {
-	if n == 1 {
-		return "1 " + noun
-	}
-	return fmt.Sprintf("%d %ss", n, noun)
 }

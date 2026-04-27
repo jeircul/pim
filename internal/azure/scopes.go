@@ -108,6 +108,21 @@ func ScopeIsChildOf(child, parent string) bool {
 	return c == p || strings.HasPrefix(c, p+"/")
 }
 
+// ScopeMatches reports whether filter matches a role's scope, using ARM child-path
+// check first, then case-insensitive substring match on scopeDisplay and scope.
+func ScopeMatches(filter, scope, scopeDisplay string) bool {
+	f := strings.TrimSpace(filter)
+	if f == "" {
+		return false
+	}
+	if ScopeIsChildOf(f, scope) {
+		return true
+	}
+	lower := strings.ToLower(f)
+	return strings.Contains(strings.ToLower(scopeDisplay), lower) ||
+		strings.Contains(strings.ToLower(scope), lower)
+}
+
 var reSegmentKeyword = regexp.MustCompile(`(?i)/subscriptions/|/resourcegroups/|/providers/microsoft\.management/managementgroups/`)
 
 // NormalizeScope lowercases known ARM segment keywords while preserving IDs/names verbatim.
