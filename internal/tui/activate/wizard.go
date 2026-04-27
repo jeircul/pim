@@ -283,13 +283,23 @@ func (w Wizard) advanceFromRoles() (Wizard, tea.Cmd) {
 	return w.startOptions()
 }
 
-// scopeOverride returns the first --scope flag value that is a child of (or equal to)
-// r.Scope, enabling scoped-down activation for MG/subscription-eligible roles.
+// scopeOverride returns the target scope to use when a --scope filter matches
+// the role's eligibility scope. Returns the filter value when it is a valid
+// ARM child path, or the role's own scope when the filter matches by display
+// name substring. Returns "" when no filter matches.
 func (w Wizard) scopeOverride(r azure.Role) string {
 	for _, s := range w.deps.ScopeFilter {
 		s = strings.TrimSpace(s)
-		if s != "" && azure.ScopeIsChildOf(s, r.Scope) {
+		if s == "" {
+			continue
+		}
+		if azure.ScopeIsChildOf(s, r.Scope) {
 			return s
+		}
+		lower := strings.ToLower(s)
+		if strings.Contains(strings.ToLower(r.ScopeDisplay), lower) ||
+			strings.Contains(strings.ToLower(r.Scope), lower) {
+			return r.Scope
 		}
 	}
 	return ""
