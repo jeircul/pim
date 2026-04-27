@@ -95,8 +95,14 @@ ARM scope paths (`/subscriptions/...`) take precedence over display-name matchin
 # bash — add to ~/.bashrc
 source <(pim completion bash)
 
-# zsh — add to ~/.zshrc
+# zsh (simple) — add to ~/.zshrc
 source <(pim completion zsh)
+
+# zsh (fpath) — run once, then add the two lines below to ~/.zshrc
+mkdir -p ~/.zfunc
+pim completion zsh > ~/.zfunc/_pim
+# fpath=(~/.zfunc $fpath)
+# autoload -Uz compinit && compinit
 
 # fish
 pim completion fish > ~/.config/fish/completions/pim.fish
