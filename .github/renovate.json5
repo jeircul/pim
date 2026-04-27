@@ -32,31 +32,48 @@
   packageRules: [
     {
       description: 'Run go mod tidy after each module update',
-      matchManagers: ['gomod'],
-      postUpdateOptions: ['gomodTidy'],
+      matchManagers: [
+        'gomod',
+      ],
+      postUpdateOptions: [
+        'gomodTidy',
+      ],
     },
     {
       description: 'Keep Go toolchain in lockstep across go.mod and .mise.toml',
-      matchPackageNames: ['go', 'golang/go'],
+      matchPackageNames: [
+        'go',
+        'golang/go',
+      ],
       groupName: 'Go toolchain',
     },
     {
       description: 'Group Azure SDK for Go modules',
-      matchManagers: ['gomod'],
-      matchPackagePrefixes: ['github.com/Azure/azure-sdk-for-go/'],
+      matchManagers: [
+        'gomod',
+      ],
       groupName: 'Azure SDK for Go',
       minimumReleaseAge: '3 days',
+      matchPackageNames: [
+        'github.com/Azure/azure-sdk-for-go/{/,}**',
+      ],
     },
     {
       description: 'Group golang.org/x libraries',
-      matchManagers: ['gomod'],
-      matchPackagePrefixes: ['golang.org/x/'],
+      matchManagers: [
+        'gomod',
+      ],
       groupName: 'golang.org/x stack',
       minimumReleaseAge: '3 days',
+      matchPackageNames: [
+        'golang.org/x/{/,}**',
+      ],
     },
     {
       description: 'Group shared GitHub Actions',
-      matchManagers: ['github-actions'],
+      matchManagers: [
+        'github-actions',
+      ],
       matchPackageNames: [
         'actions/checkout',
         'actions/setup-go',
@@ -73,7 +90,9 @@
     {
       customType: 'regex',
       description: 'Track goreleaser version in .mise.toml (not in Renovate mise registry)',
-      managerFilePatterns: ['/^\\.mise\\.toml$/'],
+      managerFilePatterns: [
+        '/^\\.mise\\.toml$/',
+      ],
       matchStrings: [
         'goreleaser\\s*=\\s*"(?<currentValue>\\d+\\.\\d+\\.\\d+)"',
       ],
