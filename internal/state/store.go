@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,11 +20,35 @@ const (
 
 // Favorite is a saved role+scope+duration combo.
 type Favorite struct {
-	Label    string `toml:"label"`
-	Role     string `toml:"role"`
-	Scope    string `toml:"scope"`
-	Duration string `toml:"duration"`
-	Key      int    `toml:"key"` // 1-9 for dashboard shortcuts
+	Label         string `toml:"label"`
+	Role          string `toml:"role"`
+	Scope         string `toml:"scope"`
+	Duration      string `toml:"duration"`
+	Justification string `toml:"justification"`
+	Key           int    `toml:"key"` // 1-9 for dashboard shortcuts
+}
+
+// Complete reports whether all four required activation fields are set.
+func (f Favorite) Complete() bool {
+	return f.Role != "" && f.Scope != "" && f.Duration != "" && f.Justification != ""
+}
+
+// MissingFields returns a comma-separated list of unset required fields.
+func (f Favorite) MissingFields() string {
+	var missing []string
+	if f.Role == "" {
+		missing = append(missing, "role")
+	}
+	if f.Scope == "" {
+		missing = append(missing, "scope")
+	}
+	if f.Duration == "" {
+		missing = append(missing, "duration")
+	}
+	if f.Justification == "" {
+		missing = append(missing, "justification")
+	}
+	return strings.Join(missing, ", ")
 }
 
 // Preferences holds user-editable preferences.

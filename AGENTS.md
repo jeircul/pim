@@ -70,6 +70,14 @@ Full API reference: `.agents/skills/golang/references/azure-pim-api.md`.
 - Multiple substring matches with no exact match returns an ambiguity error.
 - ARM scope paths take precedence over display-name matching.
 
+## Favorites behaviour
+
+- `Favorite.Complete()` returns true when `role`, `scope`, `duration`, and `justification` are all non-empty.
+- Dashboard 1–9 shortcut: if `Complete()` → `startWizard` with `AutoSubmit=true` and `favoritePending=true`; activation result shown as dashboard notice, TUI stays open. If not `Complete()` → error notice, no activation.
+- `favoritePending` on `AppModel` distinguishes favorite-triggered activations (return to dashboard) from manual wizard activations (quit with summary).
+- Favorites screen `ActivateMsg` always opens the wizard (incomplete favorites stop at the missing step).
+- `autoAdvance` in `rolelist.go` uses `scopeFilter` as a tiebreaker when multiple roles share the same name — emits only when exactly one scope match survives.
+
 ## Skills
 
 `.agents/skills/golang/` has full Go conventions, Bubble Tea v2 patterns, and the Azure PIM API reference.

@@ -60,8 +60,8 @@ pim activate \
 ### 🤖 Headless mode (scripting / CI)
 
 ```sh
-# Activate — only --role is required; --time defaults to 1h, --scope resolves
-# by display name substring, --justification may be empty
+# Activate — only --role is required; --time defaults to 1h
+# --scope matches ARM path first, then display-name substring
 pim activate --headless \
   --role Reader \
   --scope my-subscription \
@@ -108,12 +108,12 @@ pim completion fish > ~/.config/fish/completions/pim.fish
 
 ## ⏱️ Duration format
 
-`30m`, `1h`, `1h30m`, `2h`, `3h`, `4h`, `6h`, `8h`. Parsed as minutes; decimals and mixed units accepted (`1.5h` = 90 min).
+The parser accepts any integer or decimal hours (`1h`, `1.5h` = 90 min), minutes (`30m`, `45m`), and mixed units (`1h30m`).
 
 ## 🔐 Authentication
 
 Uses the existing `az login` / `Connect-AzAccount` session automatically.  
-Set `PIM_ALLOW_DEVICE_LOGIN=true` to allow interactive device code fallback when no cached credential is found.
+Set `PIM_ALLOW_DEVICE_LOGIN=true` (or `1` / `yes`) to allow interactive device code fallback when no cached credential is found.
 
 ## ⚙️ Configuration
 
@@ -131,22 +131,24 @@ Example `config.toml`:
 default_duration = "2h"   # default when no --time flag or favorite duration is set
 
 [[favorites]]
-label    = "Prod reader"
-role     = "Reader"
-scope    = "my-prod-subscription"
-duration = "1h"            # overrides default_duration for this favorite
-key      = 1
+label         = "Prod reader"
+role          = "Reader"
+scope         = "my-prod-subscription"
+duration      = "1h"      # overrides default_duration for this favorite
+justification = "Daily read access"
+key           = 1
 
 [[favorites]]
 label = "Dev owner"
 role  = "Owner"
 scope = "my-dev-subscription"
-# duration omitted — falls back to default_duration
+# duration and justification omitted — opens wizard at the missing step
 key   = 2
 ```
 
-Scope can be a full ARM path or a display name — the TUI resolves either.
-`label` is required. All other fields are optional and fall back to defaults or wizard prompts.
+`scope` accepts a full ARM path (`/subscriptions/…`) or a display-name substring — the TUI resolves either.
+
+`label` is required. When `role`, `scope`, `duration`, and `justification` are all set, pressing the shortcut key activates immediately with no prompts and returns to the dashboard with a result notice. If any field is missing the shortcut shows an error notice — open the favorite in the favorites editor (`f`) and activate from there; the wizard will stop at the first missing field.
 
 ## 🛠️ Development
 

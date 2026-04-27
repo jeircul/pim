@@ -35,6 +35,7 @@ type Deps struct {
 	TimeStr     string   // from --time flag
 	Justific    string   // from --justification flag
 	AutoSubmit  bool     // from --yes flag
+	Silent      bool     // suppress role-list render during direct favorite activation
 	Store       *state.Store
 	LoadRoles   func() ([]azure.Role, error)
 	LoadActive  func() ([]azure.ActiveAssignment, error)
@@ -233,6 +234,9 @@ func roleListConsumed(prev, next RoleList, msg tea.Msg) bool {
 
 // View renders the current step with a wizard header.
 func (w Wizard) View() string {
+	if w.deps.Silent && w.step == stepRoleList {
+		return ""
+	}
 	var sb strings.Builder
 	sb.WriteString(w.renderStepIndicator() + "\n\n")
 
