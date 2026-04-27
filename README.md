@@ -45,13 +45,13 @@ Flags pre-fill wizard fields and skip steps when enough information is provided:
 # Pre-filter the role list
 pim activate --role Reader
 
-# Jump straight to options step (role + scope already known)
-pim activate --role Reader --scope /subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+# Jump straight to options step — scope matched by display name substring
+pim activate --role Reader --scope sub-02
 
 # Auto-submit with no TUI interaction
 pim activate \
   --role Reader \
-  --scope /subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx \
+  --scope sub-02 \
   --time 1h \
   --justification "Investigating alert" \
   --yes
@@ -60,26 +60,30 @@ pim activate \
 ### 🤖 Headless mode (scripting / CI)
 
 ```sh
-# Activate — only --role is required; --time defaults to 1h, --scope to the
-# eligibility scope, --justification may be empty
+# Activate — only --role is required; --time defaults to 1h, --scope resolves
+# by display name substring, --justification may be empty
 pim activate --headless \
   --role Reader \
-  --scope /subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx \
+  --scope sub-02 \
   --time 1h \
   --justification "Deploy pipeline"
 
-# Deactivate matching assignments (--role/--scope or --yes required to avoid
-# accidentally deactivating everything; permanent and inherited assignments
-# are skipped because they cannot be deactivated via PIM)
+# Deactivate by role name; --role/--scope or --yes required
+# Permanent and inherited assignments are skipped automatically
 pim deactivate --headless --role Reader
 
-# Status — JSON output
+# Deactivate all eligible (use with care)
+pim deactivate --headless --yes
+
+# Status as JSON
 pim status --headless --output json
 ```
 
 Exit code `0` on success, `1` on error, `130` on user cancel (Ctrl-C).
 
-#### Matching policy for `--role` and `--scope`
+### 🔍 Matching policy for `--role` and `--scope`
+
+Applies to both flag acceleration (TUI) and headless mode.
 
 Both flags resolve in two passes:
 
@@ -95,14 +99,8 @@ ARM scope paths (`/subscriptions/...`) take precedence over display-name matchin
 # bash — add to ~/.bashrc
 source <(pim completion bash)
 
-# zsh (simple) — add to ~/.zshrc
+# zsh — add to ~/.zshrc
 source <(pim completion zsh)
-
-# zsh (fpath) — run once, then add the two lines below to ~/.zshrc
-mkdir -p ~/.zfunc
-pim completion zsh > ~/.zfunc/_pim
-# fpath=(~/.zfunc $fpath)
-# autoload -Uz compinit && compinit
 
 # fish
 pim completion fish > ~/.config/fish/completions/pim.fish
@@ -110,7 +108,7 @@ pim completion fish > ~/.config/fish/completions/pim.fish
 
 ## ⏱️ Duration format
 
-`30m`, `1h`, `2h`, `1h30m`, `1.5h`. Range: 30 minutes – 8 hours in 30-minute increments.
+`30m`, `1h`, `1h30m`, `2h`, `3h`, `4h`, `6h`, `8h`. Parsed as minutes; decimals and mixed units accepted (`1.5h` = 90 min).
 
 ## 🔐 Authentication
 
@@ -147,11 +145,13 @@ duration = "2h"
 key  = 2
 ```
 
+Scope can be a full ARM path or a display name — the TUI resolves either.
+
 ## 🛠️ Development
 
 ### Prerequisites
 
-- [Go](https://go.dev/dl/) 1.26.1+
+- [Go](https://go.dev/dl/) 1.26+
 - [Task](https://taskfile.dev/) (task runner)
 - [GoReleaser](https://goreleaser.com/) (releases only)
 
