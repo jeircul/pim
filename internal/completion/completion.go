@@ -69,76 +69,72 @@ func Zsh(w io.Writer) {
 	fmt.Fprint(w, `#compdef pim
 
 _pim() {
-    local -a commands
-    commands=(
-        'activate:activate roles via TUI wizard'
-        'deactivate:deactivate active role elevations'
-        'status:view active and eligible roles'
-        'completion:print shell completion script'
-        'version:print version'
-        'help:show help'
-    )
+    local context state state_descr line
+    typeset -A opt_args
 
-    local -a activate_flags
-    activate_flags=(
-        '--role[role name filter (repeatable)]:role name'
-        '-r[role name filter (repeatable)]:role name'
-        '--scope[scope path (repeatable)]:scope path'
-        '--time[activation duration (e.g. 1h, 30m)]:duration:(30m 1h 2h 4h 8h)'
-        '-t[activation duration (e.g. 1h, 30m)]:duration:(30m 1h 2h 4h 8h)'
-        '--justification[justification text]:text'
-        '-j[justification text]:text'
-        '--yes[skip confirmation]'
-        '-y[skip confirmation]'
-        '--headless[non-TUI mode]'
-        '--output[output format]:format:(table json)'
-        '-o[output format]:format:(table json)'
-        '--config-dir[override config directory]:dir:_directories'
-    )
+    _arguments \
+        '1: :->subcmd' \
+        '*:: :->args'
 
-    local -a deactivate_flags
-    deactivate_flags=(
-        '--role[role name filter (repeatable)]:role name'
-        '-r[role name filter (repeatable)]:role name'
-        '--scope[scope path (repeatable)]:scope path'
-        '--headless[non-TUI mode]'
-        '--output[output format]:format:(table json)'
-        '-o[output format]:format:(table json)'
-        '--config-dir[override config directory]:dir:_directories'
-    )
-
-    local -a status_flags
-    status_flags=(
-        '--role[role name filter (repeatable)]:role name'
-        '-r[role name filter (repeatable)]:role name'
-        '--scope[scope path (repeatable)]:scope path'
-        '--headless[non-TUI mode]'
-        '--output[output format]:format:(table json)'
-        '-o[output format]:format:(table json)'
-        '--config-dir[override config directory]:dir:_directories'
-    )
-
-    local -a base_flags
-    base_flags=(
-        '--config-dir[override config directory]:dir:_directories'
-    )
-
-    if (( CURRENT == 2 )); then
-        _describe 'command' commands
-        return
-    fi
-
-    case "$words[2]" in
-        activate)
-            _arguments "${activate_flags[@]}" ;;
-        deactivate)
-            _arguments "${deactivate_flags[@]}" ;;
-        status)
-            _arguments "${status_flags[@]}" ;;
-        completion)
-            _values 'shell' bash zsh fish ;;
-        version|help)
-            _arguments "${base_flags[@]}" ;;
+    case $state in
+        subcmd)
+            local -a subcmds
+            subcmds=(
+                'activate:activate roles via TUI wizard'
+                'deactivate:deactivate active role elevations'
+                'status:view active and eligible roles'
+                'completion:print shell completion script'
+                'version:print version'
+                'help:show help'
+            )
+            _describe 'subcommand' subcmds
+            ;;
+        args)
+            case $words[1] in
+                activate)
+                    _arguments \
+                        '--role[role name filter (repeatable)]:role name' \
+                        '-r[role name filter (repeatable)]:role name' \
+                        '--scope[scope path (repeatable)]:scope path' \
+                        '--time[activation duration]:duration:(30m 1h 2h 4h 8h)' \
+                        '-t[activation duration]:duration:(30m 1h 2h 4h 8h)' \
+                        '--justification[justification text]:text' \
+                        '-j[justification text]:text' \
+                        '--yes[skip confirmation]' \
+                        '-y[skip confirmation]' \
+                        '--headless[non-TUI mode]' \
+                        '--output[output format]:format:(table json)' \
+                        '-o[output format]:format:(table json)' \
+                        '--config-dir[override config directory]:dir:_directories'
+                    ;;
+                deactivate)
+                    _arguments \
+                        '--role[role name filter (repeatable)]:role name' \
+                        '-r[role name filter (repeatable)]:role name' \
+                        '--scope[scope path (repeatable)]:scope path' \
+                        '--yes[deactivate all without prompt]' \
+                        '-y[deactivate all without prompt]' \
+                        '--headless[non-TUI mode]' \
+                        '--output[output format]:format:(table json)' \
+                        '-o[output format]:format:(table json)' \
+                        '--config-dir[override config directory]:dir:_directories'
+                    ;;
+                status)
+                    _arguments \
+                        '--headless[non-TUI mode]' \
+                        '--output[output format]:format:(table json)' \
+                        '-o[output format]:format:(table json)' \
+                        '--config-dir[override config directory]:dir:_directories'
+                    ;;
+                completion)
+                    _values 'shell' bash zsh fish
+                    ;;
+                version|help)
+                    _arguments \
+                        '--config-dir[override config directory]:dir:_directories'
+                    ;;
+            esac
+            ;;
     esac
 }
 
