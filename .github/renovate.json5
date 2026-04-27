@@ -2,10 +2,12 @@
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
   extends: [
     'config:recommended',
+    ':enableVulnerabilityAlertsWithLabel(security)',
   ],
   enabledManagers: [
     'gomod',
     'github-actions',
+    'mise',
     'custom.regex',
   ],
   dependencyDashboard: true,
@@ -19,84 +21,65 @@
   semanticCommitScope: 'deps',
   rangeStrategy: 'bump',
   rebaseWhen: 'conflicted',
-  prHourlyLimit: 4,
-  prConcurrentLimit: 8,
-  lockFileMaintenance: {
+  prHourlyLimit: 2,
+  prConcurrentLimit: 4,
+  vulnerabilityAlerts: {
     enabled: true,
-    schedule: [
-      'before 06:00 on Monday',
-    ],
-    commitMessageSuffix: '(gomod tidy)',
+    schedule: [],
+    prHourlyLimit: 0,
+    prConcurrentLimit: 0,
   },
   packageRules: [
     {
       description: 'Run go mod tidy after each module update',
-      matchManagers: [
-        'gomod',
-      ],
-      postUpdateOptions: [
-        'gomodTidy',
-      ],
+      matchManagers: ['gomod'],
+      postUpdateOptions: ['gomodTidy'],
     },
     {
-      description: 'Separate major/minor/patch upgrades for core ecosystems',
-      matchManagers: [
-        'gomod',
-        'github-actions',
-        'custom.regex',
-      ],
-      separateMajorMinor: true,
-      separateMinorPatch: true,
+      description: 'Keep Go toolchain in lockstep across go.mod and .mise.toml',
+      matchPackageNames: ['go', 'golang/go'],
+      groupName: 'Go toolchain',
     },
     {
       description: 'Group Azure SDK for Go modules',
-      matchManagers: [
-        'gomod',
-      ],
+      matchManagers: ['gomod'],
+      matchPackagePrefixes: ['github.com/Azure/azure-sdk-for-go/'],
       groupName: 'Azure SDK for Go',
       minimumReleaseAge: '3 days',
-      matchPackageNames: [
-        '/^github.com/Azure/azure-sdk-for-go/',
-      ],
     },
     {
       description: 'Group golang.org/x libraries',
-      matchManagers: [
-        'gomod',
-      ],
+      matchManagers: ['gomod'],
+      matchPackagePrefixes: ['golang.org/x/'],
       groupName: 'golang.org/x stack',
       minimumReleaseAge: '3 days',
-      matchPackageNames: [
-        '/^golang\\.org/x//',
-      ],
     },
     {
       description: 'Group shared GitHub Actions',
-      matchManagers: [
-        'github-actions',
+      matchManagers: ['github-actions'],
+      matchPackageNames: [
+        'actions/checkout',
+        'actions/setup-go',
+        'actions/cache',
+        'actions/github-script',
+        'actions/upload-artifact',
+        'actions/download-artifact',
+        'goreleaser/goreleaser-action',
       ],
       groupName: 'GitHub Actions workflow deps',
-      matchPackageNames: [
-        '/^actions/(checkout|setup-go|cache)$/',
-        '/^goreleaser/goreleaser-action$/',
-        '/^actions/github-script$/',
-      ],
     },
   ],
   customManagers: [
     {
       customType: 'regex',
-      description: 'Keep README release commands in sync',
-      managerFilePatterns: [
-        '/^README\\.md$/',
-      ],
+      description: 'Track goreleaser version in .mise.toml (not in Renovate mise registry)',
+      managerFilePatterns: ['/^\\.mise\\.toml$/'],
       matchStrings: [
-        'git tag v(?<currentValue>\\d+\\.\\d+\\.\\d+)',
-        'git push origin v(?<currentValue>\\d+\\.\\d+\\.\\d+)',
-        'for example `v(?<currentValue>\\d+\\.\\d+\\.\\d+)`',
+        'goreleaser\\s*=\\s*"(?<currentValue>\\d+\\.\\d+\\.\\d+)"',
       ],
-      datasourceTemplate: 'github-tags',
-      depNameTemplate: 'jeircul/pim',
+      datasourceTemplate: 'github-releases',
+      depNameTemplate: 'goreleaser/goreleaser',
+      extractVersionTemplate: '^v(?<version>.+)$',
       versioningTemplate: 'semver',
     },
   ],
