@@ -3,10 +3,10 @@ module github.com/jeircul/pim
 go 1.26.2
 
 require (
-	charm.land/bubbles/v2 v2.0.0
+	charm.land/bubbles/v2 v2.1.0
 	charm.land/bubbletea/v2 v2.0.6
-	charm.land/lipgloss/v2 v2.0.1
-	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.0
+	charm.land/lipgloss/v2 v2.0.3
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.1
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
 	github.com/BurntSushi/toml v1.6.0
 	github.com/google/uuid v1.6.0
