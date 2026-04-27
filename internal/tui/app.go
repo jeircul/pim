@@ -171,6 +171,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case activate.WizardCancelMsg:
+		if m.favoritePending {
+			m.dashboardModel.SetNotice("activation cancelled — verify role/scope in favorites (f)", true)
+		}
 		m.favoritePending = false
 		m.screen = ScreenDashboard
 		return m, nil
@@ -340,6 +343,7 @@ func (m *AppModel) startWizard(fav *state.Favorite, autoSubmit bool) tea.Cmd {
 	}
 	if autoSubmit {
 		deps.AutoSubmit = true
+		deps.Silent = true
 		m.favoritePending = true
 	}
 
