@@ -46,12 +46,12 @@ Flags pre-fill wizard fields and skip steps when enough information is provided:
 pim activate --role Reader
 
 # Jump straight to options step — scope matched by display name substring
-pim activate --role Reader --scope sub-02
+pim activate --role Reader --scope my-subscription
 
 # Auto-submit with no TUI interaction
 pim activate \
   --role Reader \
-  --scope sub-02 \
+  --scope my-subscription \
   --time 1h \
   --justification "Investigating alert" \
   --yes
@@ -64,7 +64,7 @@ pim activate \
 # by display name substring, --justification may be empty
 pim activate --headless \
   --role Reader \
-  --scope sub-02 \
+  --scope my-subscription \
   --time 1h \
   --justification "Deploy pipeline"
 
@@ -88,7 +88,7 @@ Applies to both flag acceleration (TUI) and headless mode.
 Both flags resolve in two passes:
 
 1. **Exact match** wins. `--scope my-rg` matches `my-rg` even if `my-rg-dev` also exists.
-2. **Substring fallback** if no exact match. `--role admin` matches anything containing "admin".
+2. **Substring fallback** if no exact match. `--scope prod` matches `my-prod-subscription` when it's the only match.
 3. **Ambiguity errors out.** If multiple values match by substring with no exact match, the command exits non-zero and lists the candidates instead of silently picking one.
 
 ARM scope paths (`/subscriptions/...`) take precedence over display-name matching.
