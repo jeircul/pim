@@ -108,7 +108,7 @@ pim completion fish > ~/.config/fish/completions/pim.fish
 
 ## ⏱️ Duration format
 
-`30m`, `1h`, `2h`, `4h`, `8h` (tab-completion candidates). The parser accepts any integer or decimal hours (`1.5h` = 90 min), any minutes (`45m`), and mixed units (`1h30m`).
+The parser accepts any integer or decimal hours (`1h`, `1.5h` = 90 min), minutes (`30m`, `45m`), and mixed units (`1h30m`).
 
 ## 🔐 Authentication
 
