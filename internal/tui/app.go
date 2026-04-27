@@ -146,7 +146,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// If a headless command was pending, dispatch it now.
 		switch m.a.Config.Command {
 		case app.CmdActivate:
-			return m, m.startWizard(nil)
+			return m, m.startWizard(nil, false)
 		case app.CmdDeactivate:
 			return m, m.startDeactivate()
 		case app.CmdStatus:
@@ -171,6 +171,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case activate.WizardCancelMsg:
+		m.favoritePending = false
 		m.screen = ScreenDashboard
 		return m, nil
 
@@ -188,13 +189,13 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case favorites.ActivateMsg:
 		fav := msg.Favorite
-		return m, m.startWizard(&fav)
+		return m, m.startWizard(&fav, false)
 
 	case dashboard.ActivateMsg:
 		if !m.userReady {
 			return m, nil
 		}
-		return m, m.startWizard(msg.Favorite)
+		return m, m.startWizard(msg.Favorite, msg.Favorite != nil && msg.Favorite.Complete())
 
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
@@ -270,7 +271,8 @@ func (m *AppModel) startStatus() tea.Cmd {
 
 // startWizard builds the Wizard deps and switches to the activate screen.
 // fav may be nil (full wizard) or point to a pre-filled favorite.
-func (m *AppModel) startWizard(fav *state.Favorite) tea.Cmd {
+// autoSubmit skips all interactive steps and submits immediately.
+func (m *AppModel) startWizard(fav *state.Favorite, autoSubmit bool) tea.Cmd {
 	if m.principalID == "" {
 		m.exitSummary = "error: user identity not yet resolved — please retry\n"
 		m.exitErr = errors.New("principal ID unavailable")
@@ -336,7 +338,7 @@ func (m *AppModel) startWizard(fav *state.Favorite) tea.Cmd {
 	if fav != nil && fav.Justification != "" && deps.Justific == "" {
 		deps.Justific = fav.Justification
 	}
-	if fav != nil && fav.Complete() {
+	if autoSubmit {
 		deps.AutoSubmit = true
 		m.favoritePending = true
 	}
