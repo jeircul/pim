@@ -130,15 +130,15 @@ _pim() {
 
     case "$words[2]" in
         activate)
-            _arguments $activate_flags ;;
+            _arguments "${activate_flags[@]}" ;;
         deactivate)
-            _arguments $deactivate_flags ;;
+            _arguments "${deactivate_flags[@]}" ;;
         status)
-            _arguments $status_flags ;;
+            _arguments "${status_flags[@]}" ;;
         completion)
             _values 'shell' bash zsh fish ;;
         version|help)
-            _arguments $base_flags ;;
+            _arguments "${base_flags[@]}" ;;
     esac
 }
 
