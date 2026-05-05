@@ -29,9 +29,12 @@ type Client struct {
 }
 
 type childResource struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Type string `json:"type"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	Properties struct {
+		DisplayName string `json:"displayName"`
+	} `json:"properties"`
 }
 
 // NewClient creates a PIM client using the best available delegated credential.

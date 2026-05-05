@@ -36,6 +36,36 @@ func TestScopeTreeInitDoesNotAutoExpand(t *testing.T) {
 	}
 }
 
+func TestScopeTreeChildrenFlattenedWithCorrectDepth(t *testing.T) {
+	st := newTestScopeTree(func(mgID string) ([]azure.ManagementGroup, []azure.Subscription, error) {
+		return nil, nil, nil
+	})
+
+	msg := scopeChildrenMsg{
+		parentScope: st.root.scope,
+		mgs: []azure.ManagementGroup{
+			{ID: "child-mg", DisplayName: "Child MG"},
+		},
+		subs: []azure.Subscription{
+			{ID: "00000000-0000-0000-0000-000000000001", DisplayName: "My Sub"},
+		},
+	}
+	st, _ = st.Update(msg)
+
+	if len(st.flat) != 3 {
+		t.Fatalf("expected 3 flat nodes (root + 1 MG + 1 sub), got %d", len(st.flat))
+	}
+	if nodeDepth(st.flat[0]) != 0 {
+		t.Errorf("flat[0] (root) depth: want 0, got %d", nodeDepth(st.flat[0]))
+	}
+	if nodeDepth(st.flat[1]) != 1 {
+		t.Errorf("flat[1] depth: want 1, got %d", nodeDepth(st.flat[1]))
+	}
+	if nodeDepth(st.flat[2]) != 1 {
+		t.Errorf("flat[2] depth: want 1, got %d", nodeDepth(st.flat[2]))
+	}
+}
+
 func TestScopeTreeRootSelectableAfterLoadErr(t *testing.T) {
 	loadErr := errors.New("HTTP 403 AuthorizationFailed")
 	st := newTestScopeTree(func(mgID string) ([]azure.ManagementGroup, []azure.Subscription, error) {

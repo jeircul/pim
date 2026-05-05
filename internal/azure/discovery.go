@@ -28,12 +28,14 @@ func (c *Client) ListManagementGroupChildren(ctx context.Context, mgID string) (
 	for _, item := range resources {
 		lower := strings.ToLower(item.Type)
 		switch {
-		case strings.Contains(lower, "managementgroup"):
-			mgs = append(mgs, ManagementGroup{ID: item.Name, DisplayName: item.Name})
-		case strings.Contains(lower, "subscription"):
+		case strings.HasSuffix(lower, "/resourcegroups"):
+			// not a direct child of an MG; ignore
+		case strings.HasSuffix(lower, "/managementgroups"):
+			mgs = append(mgs, ManagementGroup{ID: item.Name, DisplayName: displayOr(item)})
+		case strings.HasSuffix(lower, "/subscriptions"):
 			subID := SubscriptionIDFromScope(item.ID)
 			if subID != "" {
-				subs = append(subs, Subscription{ID: subID, DisplayName: item.Name})
+				subs = append(subs, Subscription{ID: subID, DisplayName: displayOr(item)})
 			}
 		}
 	}
@@ -58,7 +60,7 @@ func (c *Client) fetchEligibleChildResources(ctx context.Context, scope string) 
 	if err != nil {
 		return nil, err
 	}
-	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/eligibleChildResources?api-version=%s&$getAllChildren=true",
+	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/eligibleChildResources?api-version=%s",
 		armEndpoint, scope, eligibleChildResourcesAPIVersion)
 
 	var out []childResource
@@ -106,4 +108,11 @@ func (c *Client) ListEligibleResourceGroups(ctx context.Context, subscriptionID 
 		out = append(out, ResourceGroup{SubscriptionID: subscriptionID, Name: name, ID: item.ID})
 	}
 	return out, nil
+}
+
+func displayOr(item childResource) string {
+	if item.Properties.DisplayName != "" {
+		return item.Properties.DisplayName
+	}
+	return item.Name
 }
