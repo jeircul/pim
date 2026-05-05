@@ -34,7 +34,6 @@ func classifyChildResources(resources []childResource) ([]ManagementGroup, []Sub
 		lower := strings.ToLower(item.Type)
 		switch {
 		case strings.Contains(lower, "resourcegroup"):
-			// not an MG-level child; skip
 		case strings.Contains(lower, "managementgroup"):
 			mgs = append(mgs, ManagementGroup{ID: item.Name, DisplayName: displayOr(item)})
 		case strings.Contains(lower, "subscription"):

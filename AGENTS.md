@@ -94,6 +94,7 @@ irm https://raw.githubusercontent.com/jeircul/pim/main/scripts/install.ps1 | iex
 - RG-scope activation returns 403 (chicken-and-egg). The client falls back to subscription scope automatically.
 - `roleAssignmentSchedules` GET at RG scope returns 500 when the caller lacks read access. Treated as "not active".
 - `GetEligibleRoles` and `GetActiveAssignments` paginate via `nextLink`.
+- `PendingRoleAssignmentRequest` (HTTP 400) is treated as success at all scopes — the role is already activating.
 
 Full API reference: `.agents/skills/golang/references/azure-pim-api.md`.
 
@@ -102,6 +103,7 @@ Full API reference: `.agents/skills/golang/references/azure-pim-api.md`.
 - `--role` and `--scope` use exact-first, substring-fallback matching.
 - Multiple substring matches with no exact match returns an ambiguity error.
 - ARM scope paths take precedence over display-name matching.
+- Bare subscription GUIDs expand to `/subscriptions/<guid>`; bare non-GUID tokens expand to the matching MG ARM path.
 
 ## Favorites behaviour
 

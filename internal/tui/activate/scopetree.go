@@ -228,18 +228,15 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 				m.cursor = 0
 				m.viewport = 0
 			}
-			// wizard handles Back when filter is empty
 		case msg.String() == "l", msg.String() == "right":
 			if m.cursor < len(m.flat) {
 				n := m.flat[m.cursor]
 				if n.kind == azure.ScopeResourceGroup || n.expanded {
 					break
 				}
-				// MG nodes and subscription nodes (when sub is root) can be expanded.
-				if n.kind == azure.ScopeManagementGroup || (n.kind == azure.ScopeSubscription && n != m.root) || m.subRoot {
-					if n.loadErr != nil {
-						// Clear the previous error so expandNode will retry.
-						n.loadErr = nil
+			if n.kind == azure.ScopeManagementGroup || (n.kind == azure.ScopeSubscription && n != m.root) || m.subRoot {
+				if n.loadErr != nil {
+					n.loadErr = nil
 					}
 					if n.loaded {
 						n.expanded = true
@@ -290,7 +287,6 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 				return m, func() tea.Msg { return ScopeTreeDoneMsg{Role: role, Scopes: scopes} }
 			}
 		case key.Matches(msg, m.keys.Back):
-			// wizard handles Back
 		}
 
 	default:
