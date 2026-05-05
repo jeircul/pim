@@ -23,23 +23,42 @@ func (c *Client) ListManagementGroupChildren(ctx context.Context, mgID string) (
 		return nil, nil, err
 	}
 
+	mgs, subs := classifyChildResources(resources)
+	return mgs, subs, nil
+}
+
+func classifyChildResources(resources []childResource) ([]ManagementGroup, []Subscription) {
 	var mgs []ManagementGroup
 	var subs []Subscription
 	for _, item := range resources {
 		lower := strings.ToLower(item.Type)
 		switch {
 		case strings.HasSuffix(lower, "/resourcegroups"):
-			// not a direct child of an MG; ignore
+			// never a direct child of an MG
 		case strings.HasSuffix(lower, "/managementgroups"):
-			mgs = append(mgs, ManagementGroup{ID: item.Name, DisplayName: displayOr(item)})
+			if countSegments(item.ID) == 4 {
+				mgs = append(mgs, ManagementGroup{ID: item.Name, DisplayName: displayOr(item)})
+			}
 		case strings.HasSuffix(lower, "/subscriptions"):
-			subID := SubscriptionIDFromScope(item.ID)
-			if subID != "" {
-				subs = append(subs, Subscription{ID: subID, DisplayName: displayOr(item)})
+			if countSegments(item.ID) == 2 {
+				subID := SubscriptionIDFromScope(item.ID)
+				if subID != "" {
+					subs = append(subs, Subscription{ID: subID, DisplayName: displayOr(item)})
+				}
 			}
 		}
 	}
-	return mgs, subs, nil
+	return mgs, subs
+}
+
+func countSegments(path string) int {
+	n := 0
+	for _, s := range strings.Split(path, "/") {
+		if s != "" {
+			n++
+		}
+	}
+	return n
 }
 
 // ListManagementGroupSubscriptions returns subscriptions under a management group
@@ -60,7 +79,7 @@ func (c *Client) fetchEligibleChildResources(ctx context.Context, scope string) 
 	if err != nil {
 		return nil, err
 	}
-	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/eligibleChildResources?api-version=%s",
+	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/eligibleChildResources?api-version=%s&$getAllChildren=true",
 		armEndpoint, scope, eligibleChildResourcesAPIVersion)
 
 	var out []childResource
