@@ -176,8 +176,19 @@ GET https://management.azure.com{mgScope}/providers/Microsoft.Authorization/elig
 the management group. For deeply nested MG hierarchies this may return zero results even
 when subscriptions exist at lower levels.
 
-Handles pagination via `nextLink`. Returns both subscriptions (`type` contains `"subscription"`)
-and resource groups (`type` contains `"resourcegroup"`).
+Handles pagination via `nextLink`. Returns three item types:
+- `type` contains `"subscription"` → subscription child scope
+- `type` contains `"resourcegroup"` → resource group child scope
+- `type` contains `"managementgroup"` → child management group
+
+**Child management groups must be treated as expandable nodes**, not discarded. A top-level MG
+(e.g. `Omnia`) may return only child MGs with no subscriptions at the first level. Each child MG
+is both selectable (the user can activate at the MG scope itself) and expandable (the user can
+drill into it to find its own children, which may be further MGs or subscriptions).
+
+`ListManagementGroupChildren` returns `([]ManagementGroup, []Subscription, error)`.
+`ListManagementGroupSubscriptions` is a thin wrapper that discards the MG slice — use it only
+for callers that genuinely need subscriptions only (e.g. headless mode).
 
 An **empty response is valid** — it means the caller has no PIM-eligible child scopes under
 that MG, not that the API failed.

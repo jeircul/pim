@@ -47,14 +47,15 @@ type ScopeTree struct {
 	// subRoot is true when the tree is rooted at a subscription (not an MG).
 	// In this mode the root can be selected directly without expansion.
 	subRoot bool
-	// loadSubs fetches subscriptions under a management group ID.
-	loadSubs func(mgID string) ([]azure.Subscription, error)
+	// loadSubs fetches child management groups and subscriptions under a management group ID.
+	loadSubs func(mgID string) ([]azure.ManagementGroup, []azure.Subscription, error)
 	// loadRGs fetches resource groups under a subscription ID.
 	loadRGs func(subID string) ([]azure.ResourceGroup, error)
 }
 
 type scopeChildrenMsg struct {
 	parentScope string
+	mgs         []azure.ManagementGroup
 	subs        []azure.Subscription
 	rgs         []azure.ResourceGroup
 	err         error
@@ -65,7 +66,7 @@ func NewScopeTree(
 	theme styles.Theme,
 	keys styles.KeyMap,
 	role azure.Role,
-	loadSubs func(string) ([]azure.Subscription, error),
+	loadSubs func(string) ([]azure.ManagementGroup, []azure.Subscription, error),
 	loadRGs func(string) ([]azure.ResourceGroup, error),
 ) ScopeTree {
 	root := &scopeNode{
@@ -135,7 +136,8 @@ func (m ScopeTree) expandNode(n *scopeNode) tea.Cmd {
 		switch kind {
 		case azure.ScopeManagementGroup:
 			mgID := azure.ManagementGroupIDFromScope(scope)
-			subs, err := m.loadSubs(mgID)
+			mgs, subs, err := m.loadSubs(mgID)
+			msg.mgs = mgs
 			msg.subs = subs
 			msg.err = err
 		case azure.ScopeSubscription:
@@ -167,6 +169,15 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 		}
 		n.loaded = true
 		n.expanded = true
+		for _, mg := range msg.mgs {
+			n.children = append(n.children, &scopeNode{
+				id:      mg.ID,
+				display: mg.DisplayName,
+				kind:    azure.ScopeManagementGroup,
+				scope:   mg.Scope(),
+				parent:  n,
+			})
+		}
 		for _, s := range msg.subs {
 			n.children = append(n.children, &scopeNode{
 				id:      s.ID,

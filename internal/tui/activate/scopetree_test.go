@@ -9,7 +9,7 @@ import (
 	"github.com/jeircul/pim/internal/tui/styles"
 )
 
-func newTestScopeTree(loadSubs func(string) ([]azure.Subscription, error)) ScopeTree {
+func newTestScopeTree(loadSubs func(string) ([]azure.ManagementGroup, []azure.Subscription, error)) ScopeTree {
 	role := azure.Role{
 		RoleName:     "Contributor",
 		Scope:        "/providers/Microsoft.Management/managementGroups/Omnia",
@@ -22,9 +22,9 @@ func newTestScopeTree(loadSubs func(string) ([]azure.Subscription, error)) Scope
 
 func TestScopeTreeInitDoesNotAutoExpand(t *testing.T) {
 	called := false
-	st := newTestScopeTree(func(mgID string) ([]azure.Subscription, error) {
+	st := newTestScopeTree(func(mgID string) ([]azure.ManagementGroup, []azure.Subscription, error) {
 		called = true
-		return nil, nil
+		return nil, nil, nil
 	})
 
 	cmd := st.Init()
@@ -38,8 +38,8 @@ func TestScopeTreeInitDoesNotAutoExpand(t *testing.T) {
 
 func TestScopeTreeRootSelectableAfterLoadErr(t *testing.T) {
 	loadErr := errors.New("HTTP 403 AuthorizationFailed")
-	st := newTestScopeTree(func(mgID string) ([]azure.Subscription, error) {
-		return nil, loadErr
+	st := newTestScopeTree(func(mgID string) ([]azure.ManagementGroup, []azure.Subscription, error) {
+		return nil, nil, loadErr
 	})
 
 	msg := scopeChildrenMsg{

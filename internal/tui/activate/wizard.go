@@ -39,7 +39,7 @@ type Deps struct {
 	Store       *state.Store
 	LoadRoles   func() ([]azure.Role, error)
 	LoadActive  func() ([]azure.ActiveAssignment, error)
-	LoadSubs    func(mgID string) ([]azure.Subscription, error)
+	LoadSubs    func(mgID string) ([]azure.ManagementGroup, []azure.Subscription, error)
 	LoadRGs     func(subID string) ([]azure.ResourceGroup, error)
 	Activate    func(role azure.Role, principalID, justification string, minutes int, targetScope string) error
 }

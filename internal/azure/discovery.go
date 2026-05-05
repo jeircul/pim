@@ -9,21 +9,44 @@ import (
 	"strings"
 )
 
+// ListManagementGroupChildren returns the direct eligible children of a management group.
+// Children may be management groups or subscriptions.
+func (c *Client) ListManagementGroupChildren(ctx context.Context, mgID string) ([]ManagementGroup, []Subscription, error) {
+	mgID = strings.TrimSpace(mgID)
+	if mgID == "" {
+		return nil, nil, fmt.Errorf("management group id cannot be empty")
+	}
+
+	scope := fmt.Sprintf("/providers/Microsoft.Management/managementGroups/%s", url.PathEscape(mgID))
+	resources, err := c.fetchEligibleChildResources(ctx, scope)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var mgs []ManagementGroup
+	var subs []Subscription
+	for _, item := range resources {
+		lower := strings.ToLower(item.Type)
+		switch {
+		case strings.Contains(lower, "managementgroup"):
+			mgs = append(mgs, ManagementGroup{ID: item.Name, DisplayName: item.Name})
+		case strings.Contains(lower, "subscription"):
+			subID := SubscriptionIDFromScope(item.ID)
+			if subID != "" {
+				subs = append(subs, Subscription{ID: subID, DisplayName: item.Name})
+			}
+		}
+	}
+	return mgs, subs, nil
+}
+
 // ListManagementGroupSubscriptions returns subscriptions under a management group
 // that the caller is PIM-eligible to activate. Uses the eligibleChildResources API
 // with getAllChildren=true so nested subscriptions are included. An empty result
 // means no eligible child scopes exist, which is valid and not an error.
 func (c *Client) ListManagementGroupSubscriptions(ctx context.Context, mgID string) ([]Subscription, error) {
-	mgID = strings.TrimSpace(mgID)
-	if mgID == "" {
-		return nil, fmt.Errorf("management group id cannot be empty")
-	}
-
-	subs, err := c.listEligibleChildSubscriptions(ctx, mgID)
-	if err != nil {
-		return nil, err
-	}
-	return subs, nil
+	_, subs, err := c.ListManagementGroupChildren(ctx, mgID)
+	return subs, err
 }
 
 // fetchEligibleChildResources fetches PIM-eligible child resources under any
@@ -55,26 +78,6 @@ func (c *Client) fetchEligibleChildResources(ctx context.Context, scope string) 
 		resp.Body.Close()
 		out = append(out, result.Value...)
 		reqURL = result.NextLink
-	}
-	return out, nil
-}
-
-func (c *Client) listEligibleChildSubscriptions(ctx context.Context, mgID string) ([]Subscription, error) {
-	scope := fmt.Sprintf("/providers/Microsoft.Management/managementGroups/%s", url.PathEscape(mgID))
-	resources, err := c.fetchEligibleChildResources(ctx, scope)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]Subscription, 0, len(resources))
-	for _, item := range resources {
-		if !strings.Contains(strings.ToLower(item.Type), "subscription") {
-			continue
-		}
-		subID := SubscriptionIDFromScope(item.ID)
-		if subID == "" {
-			continue
-		}
-		out = append(out, Subscription{ID: subID, DisplayName: item.Name})
 	}
 	return out, nil
 }

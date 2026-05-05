@@ -320,10 +320,10 @@ func (m *AppModel) startWizard(fav *state.Favorite, autoSubmit bool) tea.Cmd {
 			defer callCancel()
 			return client.GetActiveAssignments(callCtx)
 		},
-		LoadSubs: func(mgID string) ([]azure.Subscription, error) {
+		LoadSubs: func(mgID string) ([]azure.ManagementGroup, []azure.Subscription, error) {
 			callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
 			defer callCancel()
-			return client.ListManagementGroupSubscriptions(callCtx, mgID)
+			return client.ListManagementGroupChildren(callCtx, mgID)
 		},
 		LoadRGs: func(subID string) ([]azure.ResourceGroup, error) {
 			callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
