@@ -424,12 +424,25 @@ func findInTree(n *scopeNode, scope string) *scopeNode {
 
 // adjustViewport keeps cursor within the visible window.
 func (m *ScopeTree) adjustViewport() {
-	visible := max(1, m.height-6)
+	visible := m.visibleRows()
 	if m.cursor < m.viewport {
 		m.viewport = m.cursor
 	} else if m.cursor >= m.viewport+visible {
 		m.viewport = m.cursor - visible + 1
 	}
+}
+
+// visibleRows returns the number of rows the viewport can display.
+// When height is unknown (0), all flat rows are visible so nothing is clipped.
+func (m ScopeTree) visibleRows() int {
+	if m.height == 0 {
+		return max(1, len(m.flat))
+	}
+	v := m.height - 6
+	if v < 1 {
+		return 1
+	}
+	return v
 }
 
 // View renders the scope tree step.
@@ -446,7 +459,7 @@ func (m ScopeTree) View() string {
 		sb.WriteString("\n")
 	}
 
-	visibleRows := max(1, m.height-6)
+	visibleRows := m.visibleRows()
 	start := m.viewport
 	end := start + visibleRows
 	if end > len(m.flat) {

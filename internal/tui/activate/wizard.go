@@ -76,6 +76,21 @@ func New(theme styles.Theme, keys styles.KeyMap, deps Deps) Wizard {
 	return w
 }
 
+// WithSize returns a copy of w with width and height propagated to all step models.
+func (w Wizard) WithSize(width, height int) Wizard {
+	w.width = width
+	w.height = height
+	w.roleList.width = width
+	w.roleList.height = height
+	w.scopeTree.width = width
+	w.scopeTree.height = height
+	w.options.width = width
+	w.options.height = height
+	w.confirm.width = width
+	w.confirm.height = height
+	return w
+}
+
 // Init starts the first step (or fast-forwards if flags allow).
 func (w Wizard) Init() tea.Cmd {
 	return w.roleList.Init()
@@ -86,6 +101,8 @@ func (w Wizard) Editing() bool {
 	switch w.step {
 	case stepRoleList:
 		return w.roleList.Editing()
+	case stepScopeTree:
+		return w.scopeTree.Editing()
 	case stepOptions:
 		return w.options.Editing()
 	}
@@ -96,17 +113,7 @@ func (w Wizard) Editing() bool {
 func (w Wizard) Update(msg tea.Msg) (Wizard, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		w.width = msg.Width
-		w.height = msg.Height
-		// propagate to active step
-		w.roleList.width = msg.Width
-		w.roleList.height = msg.Height
-		w.scopeTree.width = msg.Width
-		w.scopeTree.height = msg.Height
-		w.options.width = msg.Width
-		w.options.height = msg.Height
-		w.confirm.width = msg.Width
-		w.confirm.height = msg.Height
+		w = w.WithSize(msg.Width, msg.Height)
 
 	case RoleListDoneMsg:
 		w.selectedRoles = msg.Selected
@@ -150,7 +157,9 @@ func (w Wizard) Update(msg tea.Msg) (Wizard, tea.Cmd) {
 		w.roleList, cmd = w.roleList.Update(msg)
 		consumed = roleListConsumed(prev, w.roleList, msg)
 	case stepScopeTree:
+		prev := w.scopeTree
 		w.scopeTree, cmd = w.scopeTree.Update(msg)
+		consumed = scopeTreeConsumed(prev, w.scopeTree, msg)
 	case stepOptions:
 		w.options, cmd = w.options.Update(msg)
 	case stepConfirm:
@@ -230,6 +239,20 @@ func roleListConsumed(prev, next RoleList, msg tea.Msg) bool {
 		return s != "enter" && s != "esc"
 	}
 	return false
+}
+
+// scopeTreeConsumed reports whether the scope tree consumed the message.
+// It returns true when the tree was filtering (all keys including enter/esc that exit
+// filter mode) or when "/" opened filter mode.
+func scopeTreeConsumed(prev, next ScopeTree, msg tea.Msg) bool {
+	kp, ok := msg.(tea.KeyPressMsg)
+	if !ok {
+		return false
+	}
+	if prev.filtering {
+		return true
+	}
+	return kp.String() == "/" && next.filtering
 }
 
 // View renders the current step with a wizard header.

@@ -347,7 +347,7 @@ func (m *AppModel) startWizard(fav *state.Favorite, autoSubmit bool) tea.Cmd {
 		m.favoritePending = true
 	}
 
-	m.wizardModel = activate.New(m.theme, m.keys, deps)
+	m.wizardModel = activate.New(m.theme, m.keys, deps).WithSize(m.width, m.height)
 	m.screen = ScreenActivate
 	return m.wizardModel.Init()
 }
