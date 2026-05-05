@@ -21,8 +21,16 @@ switch ($architecture) {
 
 $asset = "{0}_{1}_{2}.zip" -f $binary, $os, $arch
 if ($Dev) {
-    $releases = Invoke-WebRequest -Uri "https://api.github.com/repos/$repo/releases" -UseBasicParsing | ConvertFrom-Json
-    $pre = $releases | Where-Object { $_.prerelease -eq $true } | Select-Object -First 1
+    $releases = Invoke-WebRequest -Uri "https://api.github.com/repos/$repo/releases?per_page=100" -UseBasicParsing | ConvertFrom-Json
+    $pre = $releases |
+        Where-Object { $_.prerelease -eq $true } |
+        Sort-Object {
+            $t = $_.tag_name
+            $base = [System.Version]($t -replace '^v' -replace '-.*')
+            $n = if ($t -match '-dev\.(\d+)-') { [int]$Matches[1] } else { 0 }
+            [tuple]::Create($base, $n)
+        } -Descending |
+        Select-Object -First 1
     if (-not $pre) {
         Write-Error "No pre-release found for $repo"
         exit 1
