@@ -33,32 +33,18 @@ func classifyChildResources(resources []childResource) ([]ManagementGroup, []Sub
 	for _, item := range resources {
 		lower := strings.ToLower(item.Type)
 		switch {
-		case strings.HasSuffix(lower, "/resourcegroups"):
-			// never a direct child of an MG
-		case strings.HasSuffix(lower, "/managementgroups"):
-			if countSegments(item.ID) == 4 {
-				mgs = append(mgs, ManagementGroup{ID: item.Name, DisplayName: displayOr(item)})
-			}
-		case strings.HasSuffix(lower, "/subscriptions"):
-			if countSegments(item.ID) == 2 {
-				subID := SubscriptionIDFromScope(item.ID)
-				if subID != "" {
-					subs = append(subs, Subscription{ID: subID, DisplayName: displayOr(item)})
-				}
+		case strings.Contains(lower, "resourcegroup"):
+			// not an MG-level child; skip
+		case strings.Contains(lower, "managementgroup"):
+			mgs = append(mgs, ManagementGroup{ID: item.Name, DisplayName: displayOr(item)})
+		case strings.Contains(lower, "subscription"):
+			subID := SubscriptionIDFromScope(item.ID)
+			if subID != "" {
+				subs = append(subs, Subscription{ID: subID, DisplayName: displayOr(item)})
 			}
 		}
 	}
 	return mgs, subs
-}
-
-func countSegments(path string) int {
-	n := 0
-	for _, s := range strings.Split(path, "/") {
-		if s != "" {
-			n++
-		}
-	}
-	return n
 }
 
 // ListManagementGroupSubscriptions returns subscriptions under a management group
