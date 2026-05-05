@@ -22,6 +22,17 @@ type Role struct {
 	EligibilityScheduleID string
 }
 
+// ManagementGroup represents an Azure management group.
+type ManagementGroup struct {
+	ID          string
+	DisplayName string
+}
+
+// Scope returns the ARM scope path for the management group.
+func (mg ManagementGroup) Scope() string {
+	return "/providers/Microsoft.Management/managementGroups/" + mg.ID
+}
+
 // ScopeType classifies the scope level.
 type ScopeType int
 

@@ -11,8 +11,7 @@ role-schedule endpoints: **`2020-10-01`**.
 | Fetch active assignments | GET | `/providers/Microsoft.Authorization/roleAssignmentScheduleInstances` |
 | Check active at scope | GET | `{scope}/providers/Microsoft.Authorization/roleAssignmentSchedules` |
 | Activate / extend / deactivate | PUT | `{scope}/providers/Microsoft.Authorization/roleAssignmentScheduleRequests/{uuid}` |
-| List eligible child resources | GET | `{mgScope}/providers/Microsoft.Authorization/eligibleChildResources` |
-| List MG subscriptions (fallback) | GET | `/providers/Microsoft.Management/managementGroups/{mgID}/subscriptions` |
+| List eligible child resources | GET | `{mgScope}/providers/Microsoft.Authorization/eligibleChildResources?$getAllChildren=true` |
 | List RGs for subscription | GET | `/subscriptions/{subID}/resourceGroups` |
 
 ---
@@ -38,7 +37,7 @@ calling user's eligibilities only.
       "scope": "/providers/Microsoft.Management/managementGroups/{mgID}",
       "roleDefinitionId": "/providers/Microsoft.Management/managementGroups/{mgID}/providers/Microsoft.Authorization/roleDefinitions/{guid}",
       "expandedProperties": {
-        "scope": { "displayName": "Omnia-Classic-QA" },
+        "scope": { "displayName": "example-subscription" },
         "roleDefinition": { "displayName": "Reader" }
       }
     }
@@ -170,16 +169,49 @@ Used to enumerate scopes the user can narrow activation to.
 ```
 GET https://management.azure.com{mgScope}/providers/Microsoft.Authorization/eligibleChildResources
     ?api-version=2020-10-01
-    &getAllChildren=true
+    &$getAllChildren=true
 ```
 
-Handles pagination via `nextLink`. Returns both subscriptions (`type` contains `"subscription"`)
-and resource groups (`type` contains `"resourcegroup"`).
+**`$getAllChildren=true` is required.** Without it the API returns only direct children of
+the management group. For deeply nested MG hierarchies this may return zero results even
+when subscriptions exist at lower levels.
+
+Handles pagination via `nextLink`. Confirmed live payload shape is flat items with
+`id`, `name`, `type`, and sometimes `properties.displayName` (often empty). Match
+`type` by case-insensitive substring, not suffix, because Azure returns bare singular
+strings such as `"managementgroup"`, `"subscription"`, and `"resourcegroup"`:
+- `type` contains `"subscription"` → subscription child scope
+- `type` contains `"resourcegroup"` → resource group child scope
+- `type` contains `"managementgroup"` → child management group
+
+Do not use ARM path segment counts to infer direct vs nested children. Management group
+IDs are flat (`/providers/Microsoft.Management/managementGroups/{id}`) regardless of
+hierarchy depth, and subscription IDs are flat (`/subscriptions/{id}`) regardless of
+which management group contains them.
+
+**Child management groups must be treated as expandable nodes**, not discarded. A top-level MG
+(e.g. `example-mg`) may return only child MGs with no subscriptions at the first level. Each child MG
+is both selectable (the user can activate at the MG scope itself) and expandable (the user can
+drill into it to find its own children, which may be further MGs or subscriptions).
+
+`ListManagementGroupChildren` returns `([]ManagementGroup, []Subscription, error)`.
+`ListManagementGroupSubscriptions` is a thin wrapper that discards the MG slice — use it only
+for callers that genuinely need subscriptions only (e.g. headless mode).
+
+An **empty response is valid** — it means the caller has no PIM-eligible child scopes under
+that MG, not that the API failed.
+
+**Do not fall back to the legacy `managementGroups/{id}/subscriptions` endpoint.** That
+endpoint requires `Microsoft.Management/managementGroups/subscriptions/read`, which
+PIM-eligible users typically do not have. The portal never uses it; `eligibleChildResources`
+with `$getAllChildren=true` is the correct and sufficient path.
 
 ```json
 {
   "value": [
-    { "id": "/subscriptions/{subID}/resourceGroups/{rgName}", "name": "{rgName}", "type": "resourcegroup" }
+    { "id": "/providers/Microsoft.Management/managementGroups/example-child-mg", "name": "example-child-mg", "type": "managementgroup", "properties": { "displayName": "" } },
+    { "id": "/subscriptions/{subID}", "name": "{subID}", "type": "subscription", "properties": { "displayName": "" } },
+    { "id": "/subscriptions/{subID}/resourceGroups/{rgName}", "name": "{rgName}", "type": "resourcegroup", "properties": { "displayName": "" } }
   ],
   "nextLink": "..."
 }
@@ -190,12 +222,11 @@ and resource groups (`type` contains `"resourcegroup"`).
 ## 7. Constants (internal/azure/client.go)
 
 ```go
-apiVersion                             = "2020-10-01"   // all PIM role-schedule endpoints
-managementGroupSubscriptionsAPIVersion = "2023-04-01"   // MG subscriptions fallback
-eligibleChildResourcesAPIVersion       = "2020-10-01"   // eligibleChildResources
-resourceGroupsAPIVersion               = "2021-04-01"   // ARM resourceGroups list
-armEndpoint                            = "https://management.azure.com"
-graphEndpoint                          = "https://graph.microsoft.com/v1.0"
+apiVersion                        = "2020-10-01"   // all PIM role-schedule endpoints
+eligibleChildResourcesAPIVersion  = "2020-10-01"   // eligibleChildResources
+resourceGroupsAPIVersion          = "2021-04-01"   // ARM resourceGroups list
+armEndpoint                       = "https://management.azure.com"
+graphEndpoint                     = "https://graph.microsoft.com/v1.0"
 ```
 
 ---
@@ -213,6 +244,7 @@ eligibilities is impossible without a pre-existing assignment.
 |---|---|---|
 | PUT `{rgScope}/…/roleAssignmentScheduleRequests/{uuid}` | **HTTP 403 AuthorizationFailed** | Azure scope pre-check fails |
 | GET `{rgScope}/…/roleAssignmentSchedules` | **HTTP 500** | No read access; `isRoleActiveAt` swallows this as "not active" — expected |
+| PUT any scope | **HTTP 400 PendingRoleAssignmentRequest** | An activation request is already pending; treat as success-equivalent |
 
 ### Fallback pattern (implemented in `ActivateRole`)
 
@@ -230,11 +262,11 @@ The retry uses the same request body — in particular the same MG-level
 `linkedRoleEligibilityScheduleId`. Azure accepts this and activates the role at
 subscription scope rather than the narrower RG.
 
-### Confirmed via curl (March 2026, Omnia-Classic-QA / Q912-log)
+### Confirmed via curl (example-subscription / my-rg)
 
 ```bash
 # RG scope → 403
-curl -X PUT ".../resourceGroups/Q912-log/providers/Microsoft.Authorization/
+curl -X PUT ".../resourceGroups/my-rg/providers/Microsoft.Authorization/
   roleAssignmentScheduleRequests/{uuid}?api-version=2020-10-01" ...
 # {"error":{"code":"AuthorizationFailed","message":"does not have authorization to
 #  perform action 'Microsoft.Resources/subscriptions/resourceGroups/read' ..."}}

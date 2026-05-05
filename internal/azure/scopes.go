@@ -108,14 +108,36 @@ func ScopeIsChildOf(child, parent string) bool {
 	return c == p || strings.HasPrefix(c, p+"/")
 }
 
+var reGUID = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// ExpandScopeFilter normalizes a user-supplied scope filter to an ARM path when
+// the input looks like a bare subscription GUID or a bare management-group name
+// (no slashes). ARM paths are returned unchanged.
+//
+// Returns the expanded path and whether expansion occurred. Callers should
+// prefer the expanded path for ARM matching but fall back to the original for
+// display-name substring matching.
+func ExpandScopeFilter(filter string) (expanded string, wasExpanded bool) {
+	f := strings.TrimSpace(filter)
+	if f == "" || strings.Contains(f, "/") {
+		return f, false
+	}
+	if reGUID.MatchString(f) {
+		return "/subscriptions/" + f, true
+	}
+	return "/providers/Microsoft.Management/managementGroups/" + f, true
+}
+
 // ScopeMatches reports whether filter matches a role's scope, using ARM child-path
-// check first, then case-insensitive substring match on scopeDisplay and scope.
+// check first (with bare-GUID/MG-name expansion), then case-insensitive substring
+// match on scopeDisplay and scope.
 func ScopeMatches(filter, scope, scopeDisplay string) bool {
 	f := strings.TrimSpace(filter)
 	if f == "" {
 		return false
 	}
-	if ScopeIsChildOf(f, scope) {
+	expanded, _ := ExpandScopeFilter(f)
+	if ScopeIsChildOf(expanded, scope) {
 		return true
 	}
 	lower := strings.ToLower(f)

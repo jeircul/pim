@@ -34,27 +34,31 @@ type scopeNode struct {
 
 // ScopeTree is Step 2: lazy-loaded scope tree for MG- or subscription-scoped roles.
 type ScopeTree struct {
-	theme    styles.Theme
-	keys     styles.KeyMap
-	spinner  components.Spinner
-	role     azure.Role
-	root     *scopeNode
-	flat     []*scopeNode // flattened visible list
-	cursor   int
-	selected map[string]bool // set of selected scope paths
-	width    int
-	height   int
+	theme     styles.Theme
+	keys      styles.KeyMap
+	spinner   components.Spinner
+	role      azure.Role
+	root      *scopeNode
+	flat      []*scopeNode // flattened visible list
+	cursor    int
+	viewport  int             // top visible row index
+	selected  map[string]bool // set of selected scope paths
+	filter    string
+	filtering bool
+	width     int
+	height    int
 	// subRoot is true when the tree is rooted at a subscription (not an MG).
 	// In this mode the root can be selected directly without expansion.
 	subRoot bool
-	// loadSubs fetches subscriptions under a management group ID.
-	loadSubs func(mgID string) ([]azure.Subscription, error)
+	// loadSubs fetches child management groups and subscriptions under a management group ID.
+	loadSubs func(mgID string) ([]azure.ManagementGroup, []azure.Subscription, error)
 	// loadRGs fetches resource groups under a subscription ID.
 	loadRGs func(subID string) ([]azure.ResourceGroup, error)
 }
 
 type scopeChildrenMsg struct {
 	parentScope string
+	mgs         []azure.ManagementGroup
 	subs        []azure.Subscription
 	rgs         []azure.ResourceGroup
 	err         error
@@ -65,7 +69,7 @@ func NewScopeTree(
 	theme styles.Theme,
 	keys styles.KeyMap,
 	role azure.Role,
-	loadSubs func(string) ([]azure.Subscription, error),
+	loadSubs func(string) ([]azure.ManagementGroup, []azure.Subscription, error),
 	loadRGs func(string) ([]azure.ResourceGroup, error),
 ) ScopeTree {
 	root := &scopeNode{
@@ -117,17 +121,14 @@ func NewScopeTreeForSub(
 	return st
 }
 
-// Init starts the spinner and, for MG-rooted trees, triggers root expansion.
+// Init starts the spinner. Children are loaded lazily when the user presses
+// l/right to expand; the MG root itself is always selectable without expansion.
 func (m ScopeTree) Init() tea.Cmd {
-	if m.subRoot {
-		// Subscription-rooted: don't auto-expand; user selects sub or drills to RGs.
-		return m.spinner.Init()
-	}
-	return tea.Batch(
-		m.spinner.Init(),
-		m.expandNode(m.root),
-	)
+	return m.spinner.Init()
 }
+
+// Editing reports whether the filter text field is active.
+func (m ScopeTree) Editing() bool { return m.filtering }
 
 func (m ScopeTree) expandNode(n *scopeNode) tea.Cmd {
 	if n.loaded || n.loading {
@@ -141,7 +142,8 @@ func (m ScopeTree) expandNode(n *scopeNode) tea.Cmd {
 		switch kind {
 		case azure.ScopeManagementGroup:
 			mgID := azure.ManagementGroupIDFromScope(scope)
-			subs, err := m.loadSubs(mgID)
+			mgs, subs, err := m.loadSubs(mgID)
+			msg.mgs = mgs
 			msg.subs = subs
 			msg.err = err
 		case azure.ScopeSubscription:
@@ -173,6 +175,15 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 		}
 		n.loaded = true
 		n.expanded = true
+		for _, mg := range msg.mgs {
+			n.children = append(n.children, &scopeNode{
+				id:      mg.ID,
+				display: mg.DisplayName,
+				kind:    azure.ScopeManagementGroup,
+				scope:   mg.Scope(),
+				parent:  n,
+			})
+		}
 		for _, s := range msg.subs {
 			n.children = append(n.children, &scopeNode{
 				id:      s.ID,
@@ -194,14 +205,28 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 		m.flatten()
 
 	case tea.KeyPressMsg:
+		if m.filtering {
+			return m.updateFilter(msg)
+		}
 		switch {
 		case key.Matches(msg, m.keys.Up), msg.String() == "k":
 			if m.cursor > 0 {
 				m.cursor--
+				m.adjustViewport()
 			}
 		case key.Matches(msg, m.keys.Down), msg.String() == "j":
 			if m.cursor < len(m.flat)-1 {
 				m.cursor++
+				m.adjustViewport()
+			}
+		case msg.String() == "/":
+			m.filtering = true
+		case msg.String() == "esc":
+			if m.filter != "" {
+				m.filter = ""
+				m.flatten()
+				m.cursor = 0
+				m.viewport = 0
 			}
 		case msg.String() == "l", msg.String() == "right":
 			if m.cursor < len(m.flat) {
@@ -209,11 +234,9 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 				if n.kind == azure.ScopeResourceGroup || n.expanded {
 					break
 				}
-				// MG nodes and subscription nodes (when sub is root) can be expanded.
-				if n.kind == azure.ScopeManagementGroup || (n.kind == azure.ScopeSubscription && n != m.root) || m.subRoot {
-					if n.loadErr != nil {
-						// Clear the previous error so expandNode will retry.
-						n.loadErr = nil
+			if n.kind == azure.ScopeManagementGroup || (n.kind == azure.ScopeSubscription && n != m.root) || m.subRoot {
+				if n.loadErr != nil {
+					n.loadErr = nil
 					}
 					if n.loaded {
 						n.expanded = true
@@ -235,6 +258,7 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 					for i, fn := range m.flat {
 						if fn == n.parent {
 							m.cursor = i
+							m.adjustViewport()
 							break
 						}
 					}
@@ -243,7 +267,7 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 		case msg.String() == "space":
 			if m.cursor < len(m.flat) {
 				n := m.flat[m.cursor]
-				if n.loadErr != nil {
+				if n.loadErr != nil && n != m.root && n.kind != azure.ScopeSubscription {
 					break
 				}
 				scope := n.scope
@@ -262,8 +286,7 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 				role := m.role
 				return m, func() tea.Msg { return ScopeTreeDoneMsg{Role: role, Scopes: scopes} }
 			}
-		case key.Matches(msg, m.keys.Back), msg.String() == "esc":
-			// wizard handles Back
+		case key.Matches(msg, m.keys.Back):
 		}
 
 	default:
@@ -275,10 +298,99 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 	return m, nil
 }
 
-// flatten rebuilds the visible flat list from the tree.
+func (m *ScopeTree) updateFilter(msg tea.KeyPressMsg) (ScopeTree, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		m.filtering = false
+	case "esc":
+		m.filter = ""
+		m.filtering = false
+		m.flatten()
+		m.cursor = 0
+		m.viewport = 0
+	case "backspace":
+		if len(m.filter) > 0 {
+			m.filter = m.filter[:len(m.filter)-1]
+			m.flatten()
+			m.cursor = 0
+			m.viewport = 0
+		}
+	case "space":
+		m.filter += " "
+		m.flatten()
+		m.cursor = 0
+		m.viewport = 0
+	default:
+		if r := msg.String(); len(r) == 1 {
+			m.filter += r
+			m.flatten()
+			m.cursor = 0
+			m.viewport = 0
+		}
+	}
+	return *m, nil
+}
+
+// flatten rebuilds the visible flat list from the tree, applying filter if set.
 func (m *ScopeTree) flatten() {
 	m.flat = m.flat[:0]
-	m.flattenNode(m.root)
+	if m.filter == "" {
+		m.flattenNode(m.root)
+		return
+	}
+	lower := strings.ToLower(m.filter)
+	m.flattenFiltered(m.root, lower)
+}
+
+// flattenFiltered includes a node if it or any descendant matches the filter.
+// Ancestor nodes of matching nodes are always included to preserve tree structure.
+func (m *ScopeTree) flattenFiltered(n *scopeNode, lower string) bool {
+	selfMatch := strings.Contains(strings.ToLower(n.display), lower) ||
+		strings.Contains(strings.ToLower(n.scope), lower)
+
+	childMatch := false
+	var matchingChildren []*scopeNode
+	for _, c := range n.children {
+		if m.flattenFilteredCollect(c, lower) {
+			childMatch = true
+			matchingChildren = append(matchingChildren, c)
+		}
+	}
+
+	if !selfMatch && !childMatch {
+		return false
+	}
+
+	m.flat = append(m.flat, n)
+	for _, c := range matchingChildren {
+		m.flattenFilteredEmit(c, lower)
+	}
+	return true
+}
+
+// flattenFilteredCollect returns true if n or any descendant matches.
+func (m *ScopeTree) flattenFilteredCollect(n *scopeNode, lower string) bool {
+	if strings.Contains(strings.ToLower(n.display), lower) ||
+		strings.Contains(strings.ToLower(n.scope), lower) {
+		return true
+	}
+	for _, c := range n.children {
+		if m.flattenFilteredCollect(c, lower) {
+			return true
+		}
+	}
+	return false
+}
+
+// flattenFilteredEmit appends n and its matching descendants to flat.
+func (m *ScopeTree) flattenFilteredEmit(n *scopeNode, lower string) {
+	if !m.flattenFilteredCollect(n, lower) {
+		return
+	}
+	m.flat = append(m.flat, n)
+	for _, c := range n.children {
+		m.flattenFilteredEmit(c, lower)
+	}
 }
 
 func (m *ScopeTree) flattenNode(n *scopeNode) {
@@ -306,13 +418,52 @@ func findInTree(n *scopeNode, scope string) *scopeNode {
 	return nil
 }
 
+// adjustViewport keeps cursor within the visible window.
+func (m *ScopeTree) adjustViewport() {
+	visible := m.visibleRows()
+	if m.cursor < m.viewport {
+		m.viewport = m.cursor
+	} else if m.cursor >= m.viewport+visible {
+		m.viewport = m.cursor - visible + 1
+	}
+}
+
+// visibleRows returns the number of rows the viewport can display.
+// When height is unknown (0), all flat rows are visible so nothing is clipped.
+func (m ScopeTree) visibleRows() int {
+	if m.height == 0 {
+		return max(1, len(m.flat))
+	}
+	v := m.height - 6
+	if v < 1 {
+		return 1
+	}
+	return v
+}
+
 // View renders the scope tree step.
 func (m ScopeTree) View() string {
 	var sb strings.Builder
 
-	sb.WriteString(m.theme.Title.Render(fmt.Sprintf("Choose scope for %s:", m.role.RoleName)) + "\n\n")
+	sb.WriteString(m.theme.Title.Render(fmt.Sprintf("Choose scope for %s:", m.role.RoleName)) + "\n")
 
-	for i, n := range m.flat {
+	if m.filtering {
+		sb.WriteString(m.theme.Subtle.Render("Filter: ") + m.filter + "█\n")
+	} else if m.filter != "" {
+		sb.WriteString(m.theme.Subtle.Render("Filter: "+m.filter+"  (esc clear)") + "\n")
+	} else {
+		sb.WriteString("\n")
+	}
+
+	visibleRows := m.visibleRows()
+	start := m.viewport
+	end := start + visibleRows
+	if end > len(m.flat) {
+		end = len(m.flat)
+	}
+
+	for i := start; i < end; i++ {
+		n := m.flat[i]
 		depth := nodeDepth(n)
 		indent := strings.Repeat("  ", depth)
 
@@ -356,7 +507,7 @@ func (m ScopeTree) View() string {
 
 	hints := []key.Binding{m.keys.Up, m.keys.Down, m.keys.Enter, m.keys.Back}
 	sb.WriteString(components.RenderStatusBar(m.theme.HelpKey, m.theme.HelpDesc, m.theme.Subtle, hints,
-		"h/l collapse/expand  space toggle  → confirm"))
+		"h/l collapse/expand  space toggle  / filter  → confirm"))
 
 	return sb.String()
 }

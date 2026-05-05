@@ -56,8 +56,8 @@ func TestManagementGroupIDFromScope(t *testing.T) {
 }
 
 func TestSubscriptionIDFromScope(t *testing.T) {
-	got := SubscriptionIDFromScope("/subscriptions/12345678-1234-1234-1234-123456789000/resourceGroups/my-rg")
-	if got != "12345678-1234-1234-1234-123456789000" {
+	got := SubscriptionIDFromScope("/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/my-rg")
+	if got != "00000000-0000-0000-0000-000000000000" {
 		t.Fatalf("unexpected subscription id: %q", got)
 	}
 	if SubscriptionIDFromScope("/providers/Microsoft.Management/managementGroups/root") != "" {

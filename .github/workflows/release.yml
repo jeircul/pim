@@ -34,13 +34,25 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
+      - name: Validate tag format
+        run: |
+          TAG="${{ github.ref_name }}"
+          if echo "$TAG" | grep -q 'dirty'; then
+            echo "✗ Tag '$TAG' contains '-dirty' — commit all changes before releasing"
+            exit 1
+          fi
+          if ! echo "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-dev\.[0-9]+-g[0-9a-f]+)?$'; then
+            echo "✗ Tag '$TAG' does not match required format: v<major>.<minor>.<patch> or v<major>.<minor>.<patch>-dev.<n>-g<sha>"
+            exit 1
+          fi
+
       - name: Run tests
         run: go test ./...
 
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v7
+        uses: goreleaser/goreleaser-action@v6
         with:
-          version: latest
+          version: "~> v2"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

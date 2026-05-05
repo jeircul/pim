@@ -15,12 +15,11 @@ import (
 )
 
 const (
-	apiVersion                             = "2020-10-01"
-	managementGroupSubscriptionsAPIVersion = "2023-04-01"
-	eligibleChildResourcesAPIVersion       = "2020-10-01"
-	armEndpoint                            = "https://management.azure.com"
-	graphEndpoint                          = "https://graph.microsoft.com/v1.0"
-	httpTimeout                            = 30 * time.Second
+	apiVersion                       = "2020-10-01"
+	eligibleChildResourcesAPIVersion = "2020-10-01"
+	armEndpoint                      = "https://management.azure.com"
+	graphEndpoint                    = "https://graph.microsoft.com/v1.0"
+	httpTimeout                      = 30 * time.Second
 )
 
 // Client handles Azure PIM operations.
@@ -30,9 +29,12 @@ type Client struct {
 }
 
 type childResource struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Type string `json:"type"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	Properties struct {
+		DisplayName string `json:"displayName"`
+	} `json:"properties"`
 }
 
 // NewClient creates a PIM client using the best available delegated credential.

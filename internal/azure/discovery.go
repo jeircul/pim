@@ -9,26 +9,50 @@ import (
 	"strings"
 )
 
-// ListManagementGroupSubscriptions returns subscriptions under a management group.
-func (c *Client) ListManagementGroupSubscriptions(ctx context.Context, mgID string) ([]Subscription, error) {
+// ListManagementGroupChildren returns the direct eligible children of a management group.
+// Children may be management groups or subscriptions.
+func (c *Client) ListManagementGroupChildren(ctx context.Context, mgID string) ([]ManagementGroup, []Subscription, error) {
 	mgID = strings.TrimSpace(mgID)
 	if mgID == "" {
-		return nil, fmt.Errorf("management group id cannot be empty")
+		return nil, nil, fmt.Errorf("management group id cannot be empty")
 	}
 
-	subs, err := c.listEligibleChildSubscriptions(ctx, mgID)
-	if err == nil && len(subs) > 0 {
-		return subs, nil
-	}
-
-	legacy, legacyErr := c.listMGSubscriptionsLegacy(ctx, mgID)
-	if legacyErr == nil {
-		return legacy, nil
-	}
+	scope := fmt.Sprintf("/providers/Microsoft.Management/managementGroups/%s", url.PathEscape(mgID))
+	resources, err := c.fetchEligibleChildResources(ctx, scope)
 	if err != nil {
-		return nil, fmt.Errorf("eligible child resources: %w; legacy: %v", err, legacyErr)
+		return nil, nil, err
 	}
-	return nil, legacyErr
+
+	mgs, subs := classifyChildResources(resources)
+	return mgs, subs, nil
+}
+
+func classifyChildResources(resources []childResource) ([]ManagementGroup, []Subscription) {
+	var mgs []ManagementGroup
+	var subs []Subscription
+	for _, item := range resources {
+		lower := strings.ToLower(item.Type)
+		switch {
+		case strings.Contains(lower, "resourcegroup"):
+		case strings.Contains(lower, "managementgroup"):
+			mgs = append(mgs, ManagementGroup{ID: item.Name, DisplayName: displayOr(item)})
+		case strings.Contains(lower, "subscription"):
+			subID := SubscriptionIDFromScope(item.ID)
+			if subID != "" {
+				subs = append(subs, Subscription{ID: subID, DisplayName: displayOr(item)})
+			}
+		}
+	}
+	return mgs, subs
+}
+
+// ListManagementGroupSubscriptions returns subscriptions under a management group
+// that the caller is PIM-eligible to activate. Uses the eligibleChildResources API
+// with getAllChildren=true so nested subscriptions are included. An empty result
+// means no eligible child scopes exist, which is valid and not an error.
+func (c *Client) ListManagementGroupSubscriptions(ctx context.Context, mgID string) ([]Subscription, error) {
+	_, subs, err := c.ListManagementGroupChildren(ctx, mgID)
+	return subs, err
 }
 
 // fetchEligibleChildResources fetches PIM-eligible child resources under any
@@ -40,7 +64,7 @@ func (c *Client) fetchEligibleChildResources(ctx context.Context, scope string) 
 	if err != nil {
 		return nil, err
 	}
-	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/eligibleChildResources?api-version=%s",
+	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/eligibleChildResources?api-version=%s&$getAllChildren=true",
 		armEndpoint, scope, eligibleChildResourcesAPIVersion)
 
 	var out []childResource
@@ -60,26 +84,6 @@ func (c *Client) fetchEligibleChildResources(ctx context.Context, scope string) 
 		resp.Body.Close()
 		out = append(out, result.Value...)
 		reqURL = result.NextLink
-	}
-	return out, nil
-}
-
-func (c *Client) listEligibleChildSubscriptions(ctx context.Context, mgID string) ([]Subscription, error) {
-	scope := fmt.Sprintf("/providers/Microsoft.Management/managementGroups/%s", url.PathEscape(mgID))
-	resources, err := c.fetchEligibleChildResources(ctx, scope)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]Subscription, 0, len(resources))
-	for _, item := range resources {
-		if !strings.Contains(strings.ToLower(item.Type), "subscription") {
-			continue
-		}
-		subID := SubscriptionIDFromScope(item.ID)
-		if subID == "" {
-			continue
-		}
-		out = append(out, Subscription{ID: subID, DisplayName: item.Name})
 	}
 	return out, nil
 }
@@ -110,42 +114,9 @@ func (c *Client) ListEligibleResourceGroups(ctx context.Context, subscriptionID 
 	return out, nil
 }
 
-func (c *Client) listMGSubscriptionsLegacy(ctx context.Context, mgID string) ([]Subscription, error) {
-	tok, err := c.armToken(ctx)
-	if err != nil {
-		return nil, err
+func displayOr(item childResource) string {
+	if item.Properties.DisplayName != "" {
+		return item.Properties.DisplayName
 	}
-	reqURL := fmt.Sprintf("%s/providers/Microsoft.Management/managementGroups/%s/subscriptions?api-version=%s",
-		armEndpoint, url.PathEscape(mgID), managementGroupSubscriptionsAPIVersion)
-
-	var out []Subscription
-	for reqURL != "" {
-		resp, err := c.doRequest(ctx, http.MethodGet, reqURL, tok, nil)
-		if err != nil {
-			return nil, fmt.Errorf("list subscriptions for %s: %w", mgID, err)
-		}
-		var result struct {
-			Value []struct {
-				Name       string `json:"name"`
-				Properties struct {
-					DisplayName string `json:"displayName"`
-				} `json:"properties"`
-			} `json:"value"`
-			NextLink string `json:"nextLink"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			resp.Body.Close()
-			return nil, fmt.Errorf("decode mg subscriptions: %w", err)
-		}
-		resp.Body.Close()
-		for _, item := range result.Value {
-			display := item.Properties.DisplayName
-			if strings.TrimSpace(display) == "" {
-				display = item.Name
-			}
-			out = append(out, Subscription{ID: item.Name, DisplayName: display})
-		}
-		reqURL = result.NextLink
-	}
-	return out, nil
+	return item.Name
 }

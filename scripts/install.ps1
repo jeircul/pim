@@ -1,6 +1,7 @@
 param(
     [string]$Version = "latest",
-    [string]$InstallDir = "$env:LOCALAPPDATA\Programs\pim"
+    [string]$InstallDir = "$env:LOCALAPPDATA\Programs\pim",
+    [switch]$Dev
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,7 +20,24 @@ switch ($architecture) {
 }
 
 $asset = "{0}_{1}_{2}.zip" -f $binary, $os, $arch
-if ($Version -eq "latest") {
+if ($Dev) {
+    $releases = Invoke-WebRequest -Uri "https://api.github.com/repos/$repo/releases?per_page=100" -UseBasicParsing | ConvertFrom-Json
+    $pre = $releases |
+        Where-Object { $_.prerelease -eq $true } |
+        Sort-Object {
+            $t = $_.tag_name
+            $base = [System.Version]($t -replace '^v' -replace '-.*')
+            $n = if ($t -match '-dev\.(\d+)-') { [int]$Matches[1] } else { 0 }
+            [tuple]::Create($base, $n)
+        } -Descending |
+        Select-Object -First 1
+    if (-not $pre) {
+        Write-Error "No pre-release found for $repo"
+        exit 1
+    }
+    $Version = $pre.tag_name
+    $downloadUrl = "https://github.com/$repo/releases/download/$Version/$asset"
+} elseif ($Version -eq "latest") {
     $downloadUrl = "https://github.com/$repo/releases/latest/download/$asset"
 } else {
     if ($Version -notmatch '^v') {

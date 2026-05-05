@@ -195,15 +195,16 @@ func filterRoles(roles []azure.Role, roleFilters, scopeFilters []string) ([]role
 
 	var out []roleTarget
 	for _, sf := range scopeFilters {
+		expanded, _ := azure.ExpandScopeFilter(sf)
 		armMatches := map[int]struct{}{}
 		for _, i := range roleIdx {
-			if azure.ScopeIsChildOf(sf, roles[i].Scope) {
+			if azure.ScopeIsChildOf(expanded, roles[i].Scope) {
 				armMatches[i] = struct{}{}
 			}
 		}
 		if len(armMatches) > 0 {
 			for i := range armMatches {
-				out = append(out, roleTarget{role: roles[i], scope: sf})
+				out = append(out, roleTarget{role: roles[i], scope: expanded})
 			}
 			continue
 		}
@@ -222,12 +223,6 @@ func filterRoles(roles []azure.Role, roleFilters, scopeFilters []string) ([]role
 		}
 	}
 	return out, nil
-}
-
-// scopeIsChildOf reports whether child is equal to or a descendant of parent.
-// Both are ARM scope paths (case-insensitive prefix match on path segments).
-func scopeIsChildOf(child, parent string) bool {
-	return azure.ScopeIsChildOf(child, parent)
 }
 
 func filterAssignments(assignments []azure.ActiveAssignment, roleFilters, scopeFilters []string) ([]azure.ActiveAssignment, error) {
@@ -262,7 +257,8 @@ func filterAssignments(assignments []azure.ActiveAssignment, roleFilters, scopeF
 		if len(scopeFilters) > 0 {
 			scopeMatch := false
 			for _, sf := range scopeFilters {
-				if azure.ScopeIsChildOf(a.Scope, sf) || azure.ScopeIsChildOf(sf, a.Scope) {
+				expanded, _ := azure.ExpandScopeFilter(sf)
+				if azure.ScopeIsChildOf(a.Scope, expanded) || azure.ScopeIsChildOf(expanded, a.Scope) {
 					scopeMatch = true
 					break
 				}

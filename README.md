@@ -6,6 +6,7 @@ Terminal UI for activating, deactivating, and inspecting Azure Privileged Identi
 
 - 🖥️ Full-screen TUI — dashboard, activation wizard, status, deactivation, favorites management
 - 🎯 Flags pre-fill wizard steps and auto-advance; `--headless` bypasses the TUI for scripting
+- 🔭 Scope tree with `/` filter and viewport scrolling for large tenants
 - 🎨 Adaptive theme — works on light and dark terminals
 - ⭐ Favorites with 1–9 number-key shortcuts for instant re-activation
 - 💾 TOML state persistence — remembers recent justifications and favorites across sessions
@@ -48,6 +49,9 @@ pim activate --role Reader
 # Jump straight to options step — scope matched by display name substring
 pim activate --role Reader --scope my-subscription
 
+# Bare subscription GUID expands to /subscriptions/<guid>
+pim activate --role Reader --scope 00000000-0000-0000-0000-000000000000
+
 # Auto-submit with no TUI interaction
 pim activate \
   --role Reader \
@@ -62,6 +66,7 @@ pim activate \
 ```sh
 # Activate — only --role is required; --time defaults to 1h
 # --scope matches ARM path first, then display-name substring
+# Bare GUIDs expand to /subscriptions/<guid>; bare non-GUID tokens expand to MG ARM paths
 pim activate --headless \
   --role Reader \
   --scope my-subscription \
@@ -91,7 +96,7 @@ Both flags resolve in two passes:
 2. **Substring fallback** if no exact match. `--scope prod` matches `my-prod-subscription` when it's the only match.
 3. **Ambiguity errors out.** If multiple values match by substring with no exact match, the command exits non-zero and lists the candidates instead of silently picking one.
 
-ARM scope paths (`/subscriptions/...`) take precedence over display-name matching.
+ARM scope paths (`/subscriptions/...`) take precedence over display-name matching. Bare subscription GUIDs (e.g. `00000000-0000-0000-0000-000000000000`) are automatically expanded to `/subscriptions/<guid>`; bare non-GUID tokens are expanded to the matching MG ARM path.
 
 ## 🐚 Shell completions
 
