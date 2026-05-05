@@ -234,9 +234,9 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 				if n.kind == azure.ScopeResourceGroup || n.expanded {
 					break
 				}
-			if n.kind == azure.ScopeManagementGroup || (n.kind == azure.ScopeSubscription && n != m.root) || m.subRoot {
-				if n.loadErr != nil {
-					n.loadErr = nil
+				if n.kind == azure.ScopeManagementGroup || (n.kind == azure.ScopeSubscription && n != m.root) || m.subRoot {
+					if n.loadErr != nil {
+						n.loadErr = nil
 					}
 					if n.loaded {
 						n.expanded = true
