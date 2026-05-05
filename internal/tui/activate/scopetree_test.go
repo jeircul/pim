@@ -96,3 +96,37 @@ func TestScopeTreeRootSelectableAfterLoadErr(t *testing.T) {
 		t.Error("root scope not selectable after loadErr")
 	}
 }
+
+func TestStartNextScopeTreePropagatesDimensions(t *testing.T) {
+	theme := styles.NewTheme(true)
+	keys := styles.DefaultKeyMap
+	role := azure.Role{
+		RoleName:     "Contributor",
+		Scope:        "/providers/Microsoft.Management/managementGroups/Omnia",
+		ScopeDisplay: "Omnia",
+	}
+	w := Wizard{
+		theme:  theme,
+		keys:   keys,
+		width:  200,
+		height: 50,
+		deps: Deps{
+			LoadSubs: func(mgID string) ([]azure.ManagementGroup, []azure.Subscription, error) {
+				return nil, nil, nil
+			},
+			LoadRGs: func(subID string) ([]azure.ResourceGroup, error) {
+				return nil, nil
+			},
+		},
+	}
+	w.scopeQueue = []azure.Role{role}
+
+	w, _ = w.startNextScopeTree()
+
+	if w.scopeTree.width != 200 {
+		t.Errorf("scopeTree.width: want 200, got %d", w.scopeTree.width)
+	}
+	if w.scopeTree.height != 50 {
+		t.Errorf("scopeTree.height: want 50, got %d", w.scopeTree.height)
+	}
+}

@@ -316,6 +316,8 @@ func (w Wizard) startNextScopeTree() (Wizard, tea.Cmd) {
 	} else {
 		w.scopeTree = NewScopeTree(w.theme, w.keys, role, w.deps.LoadSubs, w.deps.LoadRGs)
 	}
+	w.scopeTree.width = w.width
+	w.scopeTree.height = w.height
 	w.step = stepScopeTree
 	w.scopeVisited = true
 	return w, w.scopeTree.Init()

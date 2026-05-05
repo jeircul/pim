@@ -6,10 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
-	"time"
 )
 
 // ListManagementGroupChildren returns the direct eligible children of a management group.
@@ -87,9 +84,6 @@ func (c *Client) fetchEligibleChildResources(ctx context.Context, scope string) 
 		}
 		resp.Body.Close()
 		out = append(out, result.Value...)
-		if os.Getenv("PIM_DEBUG_DISCOVERY") == "1" {
-			writeDiscoveryDump(scope, result.Value)
-		}
 		reqURL = result.NextLink
 	}
 	return out, nil
@@ -119,36 +113,6 @@ func (c *Client) ListEligibleResourceGroups(ctx context.Context, subscriptionID 
 		out = append(out, ResourceGroup{SubscriptionID: subscriptionID, Name: name, ID: item.ID})
 	}
 	return out, nil
-}
-
-type discoveryDump struct {
-	Scope string          `json:"scope"`
-	Value []childResource `json:"value"`
-}
-
-func writeDiscoveryDump(scope string, value []childResource) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "pim debug: home dir: %v\n", err)
-		return
-	}
-	dir := filepath.Join(home, ".config", "pim")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		fmt.Fprintf(os.Stderr, "pim debug: mkdir %s: %v\n", dir, err)
-		return
-	}
-	name := fmt.Sprintf("eligible-child-resources-%d.json", time.Now().UnixNano())
-	path := filepath.Join(dir, name)
-	data, err := json.MarshalIndent(discoveryDump{Scope: scope, Value: value}, "", "  ")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "pim debug: marshal dump: %v\n", err)
-		return
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		fmt.Fprintf(os.Stderr, "pim debug: write dump: %v\n", err)
-		return
-	}
-	fmt.Fprintf(os.Stderr, "pim debug: discovery dump written to %s\n", path)
 }
 
 func displayOr(item childResource) string {
