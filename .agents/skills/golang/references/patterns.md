@@ -162,7 +162,7 @@ principalID := user.ID
 type Deps struct {
     PrincipalID string
     LoadRoles   func() ([]azure.Role, error)
-    LoadSubs    func(mgID string) ([]azure.Subscription, error)
+    LoadSubs    func(mgID string) ([]azure.ManagementGroup, []azure.Subscription, error)
     Activate    func(role azure.Role, pid, just string, mins int, scope string) error
     // ...
 }

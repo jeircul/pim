@@ -98,6 +98,27 @@ func TestScopeTreeRootSelectableAfterLoadErr(t *testing.T) {
 	}
 }
 
+func TestScopeTreeSubscriptionSelectableAfterRGLoadErr(t *testing.T) {
+	st := newTestScopeTree(func(mgID string) ([]azure.ManagementGroup, []azure.Subscription, error) {
+		return nil, nil, nil
+	})
+	sub := azure.Subscription{ID: "00000000-0000-0000-0000-000000000001", DisplayName: "My Sub"}
+	st, _ = st.Update(scopeChildrenMsg{
+		parentScope: st.root.scope,
+		subs:        []azure.Subscription{sub},
+	})
+	st, _ = st.Update(scopeChildrenMsg{
+		parentScope: sub.Scope(),
+		err:         errors.New("HTTP 403 AuthorizationFailed"),
+	})
+
+	st.cursor = 1
+	st, _ = st.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	if !st.selected[sub.Scope()] {
+		t.Error("subscription scope not selectable after RG load error")
+	}
+}
+
 func TestStartNextScopeTreePropagatesDimensions(t *testing.T) {
 	theme := styles.NewTheme(true)
 	keys := styles.DefaultKeyMap

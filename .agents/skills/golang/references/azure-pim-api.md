@@ -176,10 +176,18 @@ GET https://management.azure.com{mgScope}/providers/Microsoft.Authorization/elig
 the management group. For deeply nested MG hierarchies this may return zero results even
 when subscriptions exist at lower levels.
 
-Handles pagination via `nextLink`. Returns three item types:
+Handles pagination via `nextLink`. Confirmed live payload shape is flat items with
+`id`, `name`, `type`, and sometimes `properties.displayName` (often empty). Match
+`type` by case-insensitive substring, not suffix, because Azure returns bare singular
+strings such as `"managementgroup"`, `"subscription"`, and `"resourcegroup"`:
 - `type` contains `"subscription"` → subscription child scope
 - `type` contains `"resourcegroup"` → resource group child scope
 - `type` contains `"managementgroup"` → child management group
+
+Do not use ARM path segment counts to infer direct vs nested children. Management group
+IDs are flat (`/providers/Microsoft.Management/managementGroups/{id}`) regardless of
+hierarchy depth, and subscription IDs are flat (`/subscriptions/{id}`) regardless of
+which management group contains them.
 
 **Child management groups must be treated as expandable nodes**, not discarded. A top-level MG
 (e.g. `Omnia`) may return only child MGs with no subscriptions at the first level. Each child MG
@@ -201,7 +209,9 @@ with `$getAllChildren=true` is the correct and sufficient path.
 ```json
 {
   "value": [
-    { "id": "/subscriptions/{subID}/resourceGroups/{rgName}", "name": "{rgName}", "type": "resourcegroup" }
+    { "id": "/providers/Microsoft.Management/managementGroups/Omnia-Standalone", "name": "Omnia-Standalone", "type": "managementgroup", "properties": { "displayName": "" } },
+    { "id": "/subscriptions/{subID}", "name": "{subID}", "type": "subscription", "properties": { "displayName": "" } },
+    { "id": "/subscriptions/{subID}/resourceGroups/{rgName}", "name": "{rgName}", "type": "resourcegroup", "properties": { "displayName": "" } }
   ],
   "nextLink": "..."
 }
@@ -234,6 +244,7 @@ eligibilities is impossible without a pre-existing assignment.
 |---|---|---|
 | PUT `{rgScope}/…/roleAssignmentScheduleRequests/{uuid}` | **HTTP 403 AuthorizationFailed** | Azure scope pre-check fails |
 | GET `{rgScope}/…/roleAssignmentSchedules` | **HTTP 500** | No read access; `isRoleActiveAt` swallows this as "not active" — expected |
+| PUT any scope | **HTTP 400 PendingRoleAssignmentRequest** | An activation request is already pending; treat as success-equivalent |
 
 ### Fallback pattern (implemented in `ActivateRole`)
 

@@ -225,12 +225,6 @@ func filterRoles(roles []azure.Role, roleFilters, scopeFilters []string) ([]role
 	return out, nil
 }
 
-// scopeIsChildOf reports whether child is equal to or a descendant of parent.
-// Both are ARM scope paths (case-insensitive prefix match on path segments).
-func scopeIsChildOf(child, parent string) bool {
-	return azure.ScopeIsChildOf(child, parent)
-}
-
 func filterAssignments(assignments []azure.ActiveAssignment, roleFilters, scopeFilters []string) ([]azure.ActiveAssignment, error) {
 	if len(roleFilters) == 0 && len(scopeFilters) == 0 {
 		return assignments, nil

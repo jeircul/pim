@@ -270,7 +270,7 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 		case msg.String() == "space":
 			if m.cursor < len(m.flat) {
 				n := m.flat[m.cursor]
-				if n.loadErr != nil && n != m.root {
+				if n.loadErr != nil && n != m.root && n.kind != azure.ScopeSubscription {
 					break
 				}
 				scope := n.scope
