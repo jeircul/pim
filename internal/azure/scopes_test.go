@@ -11,8 +11,8 @@ func TestExpandScopeFilter(t *testing.T) {
 	}{
 		{
 			name:        "bare subscription GUID expands",
-			input:       "e14cf978-da6b-4661-86b4-f02acd680147",
-			wantExp:     "/subscriptions/e14cf978-da6b-4661-86b4-f02acd680147",
+			input:       "00000000-0000-0000-0000-000000000000",
+			wantExp:     "/subscriptions/00000000-0000-0000-0000-000000000000",
 			wantChanged: true,
 		},
 		{
@@ -23,8 +23,8 @@ func TestExpandScopeFilter(t *testing.T) {
 		},
 		{
 			name:        "ARM subscription path unchanged",
-			input:       "/subscriptions/e14cf978-da6b-4661-86b4-f02acd680147",
-			wantExp:     "/subscriptions/e14cf978-da6b-4661-86b4-f02acd680147",
+			input:       "/subscriptions/00000000-0000-0000-0000-000000000000",
+			wantExp:     "/subscriptions/00000000-0000-0000-0000-000000000000",
 			wantChanged: false,
 		},
 		{
@@ -54,16 +54,16 @@ func TestExpandScopeFilter(t *testing.T) {
 }
 
 func TestScopeMatchesBareGUID(t *testing.T) {
-	scope := "/subscriptions/e14cf978-da6b-4661-86b4-f02acd680147"
+	scope := "/subscriptions/00000000-0000-0000-0000-000000000000"
 	display := "My Subscription"
 
-	if !ScopeMatches("e14cf978-da6b-4661-86b4-f02acd680147", scope, display) {
+	if !ScopeMatches("00000000-0000-0000-0000-000000000000", scope, display) {
 		t.Error("ScopeMatches: bare GUID should match subscription scope")
 	}
 	if !ScopeMatches(scope, scope, display) {
 		t.Error("ScopeMatches: ARM path should match itself")
 	}
-	if ScopeMatches("e14cf978-da6b-4661-86b4-f02acd680147", "/subscriptions/other-guid", "Other") {
+	if ScopeMatches("00000000-0000-0000-0000-000000000000", "/subscriptions/other-guid", "Other") {
 		t.Error("ScopeMatches: bare GUID should not match different subscription")
 	}
 }
