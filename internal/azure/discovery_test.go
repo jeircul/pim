@@ -1,8 +1,61 @@
 package azure
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
+
+// TestWriteDiscoveryDump verifies that writeDiscoveryDump creates a 0600 JSON file
+// containing scope and value when PIM_DEBUG_DISCOVERY=1.
+func TestWriteDiscoveryDump(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	resources := []childResource{
+		{ID: "/subscriptions/abc", Name: "abc", Type: "subscription"},
+	}
+	writeDiscoveryDump("/subscriptions/abc", resources)
+
+	entries, err := os.ReadDir(filepath.Join(dir, ".config", "pim"))
+	if err != nil {
+		t.Fatalf("config dir not created: %v", err)
+	}
+	var dumpFile string
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "eligible-child-resources-") && strings.HasSuffix(e.Name(), ".json") {
+			dumpFile = filepath.Join(dir, ".config", "pim", e.Name())
+		}
+	}
+	if dumpFile == "" {
+		t.Fatal("no dump file written")
+	}
+
+	info, err := os.Stat(dumpFile)
+	if err != nil {
+		t.Fatalf("stat dump file: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("expected 0600 permissions, got %04o", perm)
+	}
+
+	raw, err := os.ReadFile(dumpFile)
+	if err != nil {
+		t.Fatalf("read dump file: %v", err)
+	}
+	var dump discoveryDump
+	if err := json.Unmarshal(raw, &dump); err != nil {
+		t.Fatalf("unmarshal dump: %v", err)
+	}
+	if dump.Scope != "/subscriptions/abc" {
+		t.Errorf("unexpected scope %q", dump.Scope)
+	}
+	if len(dump.Value) != 1 || dump.Value[0].Name != "abc" {
+		t.Errorf("unexpected value %+v", dump.Value)
+	}
+}
 
 // TestClassifyChildResourcesBareTypes verifies the real PIM API type shapes (bare strings).
 func TestClassifyChildResourcesBareTypes(t *testing.T) {
