@@ -379,3 +379,45 @@ func TestRunStatusJSONValid(t *testing.T) {
 		t.Errorf("want 1 element, got %d", len(result))
 	}
 }
+
+func TestFilterRolesBareGUID(t *testing.T) {
+	const guid = "e14cf978-da6b-4661-86b4-f02acd680147"
+	roles := []azure.Role{
+		{RoleName: "Owner", Scope: "/subscriptions/" + guid, ScopeDisplay: "My Sub"},
+		{RoleName: "Owner", Scope: "/subscriptions/other-sub", ScopeDisplay: "Other Sub"},
+	}
+
+	targets, err := filterRoles(roles, []string{"Owner"}, []string{guid})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(targets) != 1 {
+		t.Fatalf("want 1 target, got %d", len(targets))
+	}
+	wantScope := "/subscriptions/" + guid
+	if targets[0].scope != wantScope {
+		t.Errorf("target scope = %q; want %q", targets[0].scope, wantScope)
+	}
+	if targets[0].role.Scope != "/subscriptions/"+guid {
+		t.Errorf("role scope = %q; want /subscriptions/%s", targets[0].role.Scope, guid)
+	}
+}
+
+func TestFilterAssignmentsBareGUID(t *testing.T) {
+	const guid = "e14cf978-da6b-4661-86b4-f02acd680147"
+	assignments := []azure.ActiveAssignment{
+		{RoleName: "Owner", Scope: "/subscriptions/" + guid, ScopeDisplay: "My Sub"},
+		{RoleName: "Owner", Scope: "/subscriptions/other-sub", ScopeDisplay: "Other Sub"},
+	}
+
+	out, err := filterAssignments(assignments, []string{"Owner"}, []string{guid})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("want 1 assignment, got %d", len(out))
+	}
+	if out[0].Scope != "/subscriptions/"+guid {
+		t.Errorf("assignment scope = %q; want /subscriptions/%s", out[0].Scope, guid)
+	}
+}

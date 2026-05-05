@@ -117,16 +117,10 @@ func NewScopeTreeForSub(
 	return st
 }
 
-// Init starts the spinner and, for MG-rooted trees, triggers root expansion.
+// Init starts the spinner. Children are loaded lazily when the user presses
+// l/right to expand; the MG root itself is always selectable without expansion.
 func (m ScopeTree) Init() tea.Cmd {
-	if m.subRoot {
-		// Subscription-rooted: don't auto-expand; user selects sub or drills to RGs.
-		return m.spinner.Init()
-	}
-	return tea.Batch(
-		m.spinner.Init(),
-		m.expandNode(m.root),
-	)
+	return m.spinner.Init()
 }
 
 func (m ScopeTree) expandNode(n *scopeNode) tea.Cmd {
@@ -243,7 +237,7 @@ func (m ScopeTree) Update(msg tea.Msg) (ScopeTree, tea.Cmd) {
 		case msg.String() == "space":
 			if m.cursor < len(m.flat) {
 				n := m.flat[m.cursor]
-				if n.loadErr != nil {
+				if n.loadErr != nil && n != m.root {
 					break
 				}
 				scope := n.scope
