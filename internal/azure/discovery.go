@@ -9,7 +9,10 @@ import (
 	"strings"
 )
 
-// ListManagementGroupSubscriptions returns subscriptions under a management group.
+// ListManagementGroupSubscriptions returns subscriptions under a management group
+// that the caller is PIM-eligible to activate. Uses the eligibleChildResources API
+// with getAllChildren=true so nested subscriptions are included. An empty result
+// means no eligible child scopes exist, which is valid and not an error.
 func (c *Client) ListManagementGroupSubscriptions(ctx context.Context, mgID string) ([]Subscription, error) {
 	mgID = strings.TrimSpace(mgID)
 	if mgID == "" {
@@ -17,18 +20,10 @@ func (c *Client) ListManagementGroupSubscriptions(ctx context.Context, mgID stri
 	}
 
 	subs, err := c.listEligibleChildSubscriptions(ctx, mgID)
-	if err == nil && len(subs) > 0 {
-		return subs, nil
-	}
-
-	legacy, legacyErr := c.listMGSubscriptionsLegacy(ctx, mgID)
-	if legacyErr == nil {
-		return legacy, nil
-	}
 	if err != nil {
-		return nil, fmt.Errorf("eligible child resources: %w; legacy: %v", err, legacyErr)
+		return nil, err
 	}
-	return nil, legacyErr
+	return subs, nil
 }
 
 // fetchEligibleChildResources fetches PIM-eligible child resources under any
@@ -40,7 +35,7 @@ func (c *Client) fetchEligibleChildResources(ctx context.Context, scope string) 
 	if err != nil {
 		return nil, err
 	}
-	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/eligibleChildResources?api-version=%s",
+	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/eligibleChildResources?api-version=%s&$getAllChildren=true",
 		armEndpoint, scope, eligibleChildResourcesAPIVersion)
 
 	var out []childResource
@@ -110,42 +105,3 @@ func (c *Client) ListEligibleResourceGroups(ctx context.Context, subscriptionID 
 	return out, nil
 }
 
-func (c *Client) listMGSubscriptionsLegacy(ctx context.Context, mgID string) ([]Subscription, error) {
-	tok, err := c.armToken(ctx)
-	if err != nil {
-		return nil, err
-	}
-	reqURL := fmt.Sprintf("%s/providers/Microsoft.Management/managementGroups/%s/subscriptions?api-version=%s",
-		armEndpoint, url.PathEscape(mgID), managementGroupSubscriptionsAPIVersion)
-
-	var out []Subscription
-	for reqURL != "" {
-		resp, err := c.doRequest(ctx, http.MethodGet, reqURL, tok, nil)
-		if err != nil {
-			return nil, fmt.Errorf("list subscriptions for %s: %w", mgID, err)
-		}
-		var result struct {
-			Value []struct {
-				Name       string `json:"name"`
-				Properties struct {
-					DisplayName string `json:"displayName"`
-				} `json:"properties"`
-			} `json:"value"`
-			NextLink string `json:"nextLink"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			resp.Body.Close()
-			return nil, fmt.Errorf("decode mg subscriptions: %w", err)
-		}
-		resp.Body.Close()
-		for _, item := range result.Value {
-			display := item.Properties.DisplayName
-			if strings.TrimSpace(display) == "" {
-				display = item.Name
-			}
-			out = append(out, Subscription{ID: item.Name, DisplayName: display})
-		}
-		reqURL = result.NextLink
-	}
-	return out, nil
-}

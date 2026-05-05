@@ -11,8 +11,7 @@ role-schedule endpoints: **`2020-10-01`**.
 | Fetch active assignments | GET | `/providers/Microsoft.Authorization/roleAssignmentScheduleInstances` |
 | Check active at scope | GET | `{scope}/providers/Microsoft.Authorization/roleAssignmentSchedules` |
 | Activate / extend / deactivate | PUT | `{scope}/providers/Microsoft.Authorization/roleAssignmentScheduleRequests/{uuid}` |
-| List eligible child resources | GET | `{mgScope}/providers/Microsoft.Authorization/eligibleChildResources` |
-| List MG subscriptions (fallback) | GET | `/providers/Microsoft.Management/managementGroups/{mgID}/subscriptions` |
+| List eligible child resources | GET | `{mgScope}/providers/Microsoft.Authorization/eligibleChildResources?$getAllChildren=true` |
 | List RGs for subscription | GET | `/subscriptions/{subID}/resourceGroups` |
 
 ---
@@ -170,11 +169,23 @@ Used to enumerate scopes the user can narrow activation to.
 ```
 GET https://management.azure.com{mgScope}/providers/Microsoft.Authorization/eligibleChildResources
     ?api-version=2020-10-01
-    &getAllChildren=true
+    &$getAllChildren=true
 ```
+
+**`$getAllChildren=true` is required.** Without it the API returns only direct children of
+the management group. For deeply nested MG hierarchies this may return zero results even
+when subscriptions exist at lower levels.
 
 Handles pagination via `nextLink`. Returns both subscriptions (`type` contains `"subscription"`)
 and resource groups (`type` contains `"resourcegroup"`).
+
+An **empty response is valid** — it means the caller has no PIM-eligible child scopes under
+that MG, not that the API failed.
+
+**Do not fall back to the legacy `managementGroups/{id}/subscriptions` endpoint.** That
+endpoint requires `Microsoft.Management/managementGroups/subscriptions/read`, which
+PIM-eligible users typically do not have. The portal never uses it; `eligibleChildResources`
+with `$getAllChildren=true` is the correct and sufficient path.
 
 ```json
 {
@@ -190,12 +201,11 @@ and resource groups (`type` contains `"resourcegroup"`).
 ## 7. Constants (internal/azure/client.go)
 
 ```go
-apiVersion                             = "2020-10-01"   // all PIM role-schedule endpoints
-managementGroupSubscriptionsAPIVersion = "2023-04-01"   // MG subscriptions fallback
-eligibleChildResourcesAPIVersion       = "2020-10-01"   // eligibleChildResources
-resourceGroupsAPIVersion               = "2021-04-01"   // ARM resourceGroups list
-armEndpoint                            = "https://management.azure.com"
-graphEndpoint                          = "https://graph.microsoft.com/v1.0"
+apiVersion                        = "2020-10-01"   // all PIM role-schedule endpoints
+eligibleChildResourcesAPIVersion  = "2020-10-01"   // eligibleChildResources
+resourceGroupsAPIVersion          = "2021-04-01"   // ARM resourceGroups list
+armEndpoint                       = "https://management.azure.com"
+graphEndpoint                     = "https://graph.microsoft.com/v1.0"
 ```
 
 ---
