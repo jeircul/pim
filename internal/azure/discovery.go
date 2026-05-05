@@ -104,4 +104,3 @@ func (c *Client) ListEligibleResourceGroups(ctx context.Context, subscriptionID 
 	}
 	return out, nil
 }
-
