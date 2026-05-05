@@ -58,16 +58,96 @@ tasks:
     desc: Print release instructions
     cmds:
       - |
-          echo "1. Ensure git status is clean and up to date"
-          echo "2. Set a tag: git tag vX.Y.Z && git push origin vX.Y.Z"
-          echo "3. Optionally run task release:snapshot (dry run)"
-          echo "4. Run task release:publish to push artefacts (requires GITHUB_TOKEN)"
+          echo "Use 'task release:dev' (non-main branch) or 'task release:stable' (main only)"
     silent: true
 
-  release:publish:
-    desc: Publish a release to GitHub (requires GITHUB_TOKEN)
+  release:dev:
+    desc: Publish a pre-release from the current non-main branch (requires GITHUB_TOKEN)
     cmds:
-      - goreleaser release --clean
+      - |
+          BRANCH=$(git branch --show-current)
+          if [ "$BRANCH" = "main" ]; then
+            echo "✗ release:dev must not run on main — use task release:stable"
+            exit 1
+          fi
+          case "$BRANCH" in
+            renovate/*) echo "✗ release:dev is not allowed on renovate/* branches"; exit 1 ;;
+          esac
+          RAW=$(git describe --tags --long --dirty 2>/dev/null || echo "")
+          if [ -z "$RAW" ]; then
+            N=$(git rev-list --count HEAD)
+            SHA=$(git rev-parse --short HEAD)
+            VERSION="v0.0.0-dev.${N}-g${SHA}"
+          else
+            BASE=$(echo "$RAW" | sed 's/-[0-9]*-g[0-9a-f]*\(-dirty\)*$//')
+            N=$(echo "$RAW" | sed 's/.*-\([0-9]*\)-g[0-9a-f]*/\1/')
+            SHA=$(echo "$RAW" | sed 's/.*-g\([0-9a-f]*\).*/\1/' | sed 's/-dirty//')
+            DIRTY=$(echo "$RAW" | grep -q 'dirty' && echo "-dirty" || echo "")
+            if [ "$N" = "0" ] && [ -z "$DIRTY" ]; then
+              echo "✗ HEAD is already tagged as $BASE — nothing to pre-release"
+              exit 1
+            fi
+            VERSION="${BASE}-dev.${N}-g${SHA}${DIRTY}"
+          fi
+          if echo "$VERSION" | grep -q 'dirty'; then
+            echo "✗ Working tree is dirty — commit or stash changes before releasing"
+            exit 1
+          fi
+          echo "Proposed version: $VERSION"
+          printf "Publish pre-release %s? (y/N): " "$VERSION"
+          read -r CONFIRM
+          if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
+            echo "Aborted."
+            exit 1
+          fi
+          git tag "$VERSION"
+          git push origin "$VERSION"
+          echo ""
+          echo "✓ Tag $VERSION pushed — GitHub Actions will publish the pre-release."
+          echo "Install: irm https://raw.githubusercontent.com/jeircul/pim/main/scripts/install.ps1 | iex -Dev"
+    preconditions:
+      - sh: "task fmt"
+        msg: "fmt failed"
+      - sh: "task test"
+        msg: "tests failed"
+
+  release:stable:
+    desc: Tag and publish a stable release from main (requires GITHUB_TOKEN)
+    cmds:
+      - |
+          BRANCH=$(git branch --show-current)
+          if [ "$BRANCH" != "main" ]; then
+            echo "✗ release:stable must run on main (current: $BRANCH)"
+            exit 1
+          fi
+          git fetch origin main --quiet
+          BEHIND=$(git rev-list --count HEAD..origin/main)
+          if [ "$BEHIND" -gt 0 ]; then
+            echo "✗ main is $BEHIND commit(s) behind origin/main — pull first"
+            exit 1
+          fi
+          printf "Version? (e.g. v0.6.0): "
+          read -r VERSION
+          if ! echo "$VERSION" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "✗ Invalid version '$VERSION' — must match v<major>.<minor>.<patch>"
+            exit 1
+          fi
+          printf "Tag and release %s? (y/N): " "$VERSION"
+          read -r CONFIRM
+          if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
+            echo "Aborted."
+            exit 1
+          fi
+          git tag "$VERSION"
+          git push origin "$VERSION"
+          echo ""
+          echo "✓ Tag $VERSION pushed — GitHub Actions will publish the release."
+          echo "Install: irm https://raw.githubusercontent.com/jeircul/pim/main/scripts/install.ps1 | iex"
+    preconditions:
+      - sh: "task fmt"
+        msg: "fmt failed"
+      - sh: "task test"
+        msg: "tests failed"
 
   release:snapshot:
     desc: Generate release artefacts locally without publishing

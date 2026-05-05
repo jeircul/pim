@@ -44,6 +44,39 @@ cat /etc/ssl/certs/ca-certificates.crt /tmp/corp-ca.pem > /tmp/ca-bundle.crt
 GOTOOLCHAIN=local SSL_CERT_FILE=/tmp/ca-bundle.crt go mod tidy
 ```
 
+## Releases
+
+Two release tiers, both require a clean `task fmt && task test` pass.
+
+| Task | Branch | Result |
+|------|--------|--------|
+| `task release:dev` | any non-main, non-renovate | GitHub pre-release with auto-computed `vX.Y.Z-dev.N-gSHA` tag |
+| `task release:stable` | `main` only, up to date with `origin/main` | Stable GitHub release; prompts for `vX.Y.Z` tag |
+
+### Branch naming (advisory)
+
+| Prefix | Purpose |
+|--------|---------|
+| `fix/` | Bug fixes |
+| `feat/` | New features |
+| `chore/` | Maintenance, deps, docs |
+
+### Install commands
+
+```powershell
+# Latest stable
+irm https://raw.githubusercontent.com/jeircul/pim/main/scripts/install.ps1 | iex
+
+# Latest pre-release (dev)
+irm https://raw.githubusercontent.com/jeircul/pim/main/scripts/install.ps1 | iex -Dev
+```
+
+### Rules
+
+- Never push a `v*` tag manually — always use `task release:dev` or `task release:stable`.
+- `release:stable` requires `main` to be up to date with `origin/main` (fetches before checking).
+- `release:dev` is blocked on `main` and `renovate/*` branches.
+
 ## Rules
 
 - `internal/` only. No `pkg/`, no Cobra/urfave, no testify, no logging libs.
