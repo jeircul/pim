@@ -37,7 +37,7 @@ calling user's eligibilities only.
       "scope": "/providers/Microsoft.Management/managementGroups/{mgID}",
       "roleDefinitionId": "/providers/Microsoft.Management/managementGroups/{mgID}/providers/Microsoft.Authorization/roleDefinitions/{guid}",
       "expandedProperties": {
-        "scope": { "displayName": "Omnia-Classic-QA" },
+        "scope": { "displayName": "Contoso-Platform-QA" },
         "roleDefinition": { "displayName": "Reader" }
       }
     }
@@ -190,7 +190,7 @@ hierarchy depth, and subscription IDs are flat (`/subscriptions/{id}`) regardles
 which management group contains them.
 
 **Child management groups must be treated as expandable nodes**, not discarded. A top-level MG
-(e.g. `Omnia`) may return only child MGs with no subscriptions at the first level. Each child MG
+(e.g. `Contoso`) may return only child MGs with no subscriptions at the first level. Each child MG
 is both selectable (the user can activate at the MG scope itself) and expandable (the user can
 drill into it to find its own children, which may be further MGs or subscriptions).
 
@@ -209,7 +209,7 @@ with `$getAllChildren=true` is the correct and sufficient path.
 ```json
 {
   "value": [
-    { "id": "/providers/Microsoft.Management/managementGroups/Omnia-Standalone", "name": "Omnia-Standalone", "type": "managementgroup", "properties": { "displayName": "" } },
+    { "id": "/providers/Microsoft.Management/managementGroups/Contoso-Standalone", "name": "Contoso-Standalone", "type": "managementgroup", "properties": { "displayName": "" } },
     { "id": "/subscriptions/{subID}", "name": "{subID}", "type": "subscription", "properties": { "displayName": "" } },
     { "id": "/subscriptions/{subID}/resourceGroups/{rgName}", "name": "{rgName}", "type": "resourcegroup", "properties": { "displayName": "" } }
   ],
@@ -262,11 +262,11 @@ The retry uses the same request body — in particular the same MG-level
 `linkedRoleEligibilityScheduleId`. Azure accepts this and activates the role at
 subscription scope rather than the narrower RG.
 
-### Confirmed via curl (March 2026, Omnia-Classic-QA / Q912-log)
+### Confirmed via curl (Contoso-Platform-QA / my-rg)
 
 ```bash
 # RG scope → 403
-curl -X PUT ".../resourceGroups/Q912-log/providers/Microsoft.Authorization/
+curl -X PUT ".../resourceGroups/my-rg/providers/Microsoft.Authorization/
   roleAssignmentScheduleRequests/{uuid}?api-version=2020-10-01" ...
 # {"error":{"code":"AuthorizationFailed","message":"does not have authorization to
 #  perform action 'Microsoft.Resources/subscriptions/resourceGroups/read' ..."}}

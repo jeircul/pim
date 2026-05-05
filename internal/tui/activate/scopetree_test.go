@@ -13,8 +13,8 @@ import (
 func newTestScopeTree(loadSubs func(string) ([]azure.ManagementGroup, []azure.Subscription, error)) ScopeTree {
 	role := azure.Role{
 		RoleName:     "Contributor",
-		Scope:        "/providers/Microsoft.Management/managementGroups/Omnia",
-		ScopeDisplay: "Omnia",
+		Scope:        "/providers/Microsoft.Management/managementGroups/Contoso",
+		ScopeDisplay: "Contoso",
 	}
 	theme := styles.NewTheme(true)
 	keys := styles.DefaultKeyMap
@@ -124,8 +124,8 @@ func TestStartNextScopeTreePropagatesDimensions(t *testing.T) {
 	keys := styles.DefaultKeyMap
 	role := azure.Role{
 		RoleName:     "Contributor",
-		Scope:        "/providers/Microsoft.Management/managementGroups/Omnia",
-		ScopeDisplay: "Omnia",
+		Scope:        "/providers/Microsoft.Management/managementGroups/Contoso",
+		ScopeDisplay: "Contoso",
 	}
 	w := Wizard{
 		theme:  theme,
@@ -215,8 +215,8 @@ func TestScopeTreeFilterEscDoesNotTriggerWizardBack(t *testing.T) {
 	keys := styles.DefaultKeyMap
 	role := azure.Role{
 		RoleName:     "Contributor",
-		Scope:        "/providers/Microsoft.Management/managementGroups/Omnia",
-		ScopeDisplay: "Omnia",
+		Scope:        "/providers/Microsoft.Management/managementGroups/Contoso",
+		ScopeDisplay: "Contoso",
 	}
 	w := Wizard{
 		theme:  theme,
