@@ -10,7 +10,7 @@ func TestAutoAdvance(t *testing.T) {
 	roleA := azure.Role{RoleName: "Contributor", Scope: "/subscriptions/sub-1", ScopeDisplay: "Sub One"}
 	roleB := azure.Role{RoleName: "Contributor", Scope: "/subscriptions/sub-2", ScopeDisplay: "Sub Two"}
 	roleC := azure.Role{RoleName: "Reader", Scope: "/subscriptions/sub-1", ScopeDisplay: "Sub One"}
-	roleD := azure.Role{RoleName: "Contributor", Scope: "/subscriptions/e14cf978-da6b-4661-86b4-f02acd680147", ScopeDisplay: "GUID Sub"}
+	roleD := azure.Role{RoleName: "Contributor", Scope: "/subscriptions/00000000-0000-0000-0000-000000000000", ScopeDisplay: "GUID Sub"}
 
 	tests := []struct {
 		name        string
@@ -72,7 +72,7 @@ func TestAutoAdvance(t *testing.T) {
 			name:        "roleFilter matches two roles scopeFilter bare GUID emits correct role",
 			roles:       []azure.Role{roleA, roleD},
 			roleFilter:  []string{"Contributor"},
-			scopeFilter: []string{"e14cf978-da6b-4661-86b4-f02acd680147"},
+			scopeFilter: []string{"00000000-0000-0000-0000-000000000000"},
 			wantNil:     false,
 			wantRole:    roleD,
 		},

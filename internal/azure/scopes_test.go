@@ -17,8 +17,8 @@ func TestExpandScopeFilter(t *testing.T) {
 		},
 		{
 			name:        "bare MG name expands",
-			input:       "Contoso",
-			wantExp:     "/providers/Microsoft.Management/managementGroups/Contoso",
+			input:       "example-mg",
+			wantExp:     "/providers/Microsoft.Management/managementGroups/example-mg",
 			wantChanged: true,
 		},
 		{
@@ -69,10 +69,10 @@ func TestScopeMatchesBareGUID(t *testing.T) {
 }
 
 func TestScopeMatchesBareMGName(t *testing.T) {
-	scope := "/providers/Microsoft.Management/managementGroups/Contoso"
-	display := "Contoso"
+	scope := "/providers/Microsoft.Management/managementGroups/example-mg"
+	display := "example-mg"
 
-	if !ScopeMatches("Contoso", scope, display) {
+	if !ScopeMatches("example-mg", scope, display) {
 		t.Error("ScopeMatches: bare MG name should match MG scope")
 	}
 	if ScopeMatches("OtherMG", scope, display) {

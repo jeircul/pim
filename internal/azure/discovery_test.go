@@ -16,15 +16,15 @@ func TestClassifyChildResourcesBareTypes(t *testing.T) {
 			}{DisplayName: "Child MG"},
 		},
 		{
-			ID:   "/subscriptions/00000000-0000-0000-0000-000000000001",
-			Name: "00000000-0000-0000-0000-000000000001",
+			ID:   "/subscriptions/00000000-0000-0000-0000-000000000000",
+			Name: "00000000-0000-0000-0000-000000000000",
 			Type: "subscription",
 			Properties: struct {
 				DisplayName string `json:"displayName"`
 			}{DisplayName: "My Sub"},
 		},
 		{
-			ID:   "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/my-rg",
+			ID:   "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/my-rg",
 			Name: "my-rg",
 			Type: "resourcegroup",
 		},
@@ -58,15 +58,15 @@ func TestClassifyChildResourcesNamespacedTypes(t *testing.T) {
 			}{DisplayName: "Child MG"},
 		},
 		{
-			ID:   "/subscriptions/00000000-0000-0000-0000-000000000001",
-			Name: "00000000-0000-0000-0000-000000000001",
+			ID:   "/subscriptions/00000000-0000-0000-0000-000000000000",
+			Name: "00000000-0000-0000-0000-000000000000",
 			Type: "Microsoft.Resources/subscriptions",
 			Properties: struct {
 				DisplayName string `json:"displayName"`
 			}{DisplayName: "My Sub"},
 		},
 		{
-			ID:   "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/my-rg",
+			ID:   "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/my-rg",
 			Name: "my-rg",
 			Type: "Microsoft.Resources/subscriptions/resourceGroups",
 		},

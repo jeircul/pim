@@ -13,8 +13,8 @@ import (
 func newTestScopeTree(loadSubs func(string) ([]azure.ManagementGroup, []azure.Subscription, error)) ScopeTree {
 	role := azure.Role{
 		RoleName:     "Contributor",
-		Scope:        "/providers/Microsoft.Management/managementGroups/Contoso",
-		ScopeDisplay: "Contoso",
+		Scope:        "/providers/Microsoft.Management/managementGroups/example-mg",
+		ScopeDisplay: "example-mg",
 	}
 	theme := styles.NewTheme(true)
 	keys := styles.DefaultKeyMap
@@ -48,7 +48,7 @@ func TestScopeTreeChildrenFlattenedWithCorrectDepth(t *testing.T) {
 			{ID: "child-mg", DisplayName: "Child MG"},
 		},
 		subs: []azure.Subscription{
-			{ID: "00000000-0000-0000-0000-000000000001", DisplayName: "My Sub"},
+			{ID: "00000000-0000-0000-0000-000000000000", DisplayName: "My Sub"},
 		},
 	}
 	st, _ = st.Update(msg)
@@ -102,7 +102,7 @@ func TestScopeTreeSubscriptionSelectableAfterRGLoadErr(t *testing.T) {
 	st := newTestScopeTree(func(mgID string) ([]azure.ManagementGroup, []azure.Subscription, error) {
 		return nil, nil, nil
 	})
-	sub := azure.Subscription{ID: "00000000-0000-0000-0000-000000000001", DisplayName: "My Sub"}
+	sub := azure.Subscription{ID: "00000000-0000-0000-0000-000000000000", DisplayName: "My Sub"}
 	st, _ = st.Update(scopeChildrenMsg{
 		parentScope: st.root.scope,
 		subs:        []azure.Subscription{sub},
@@ -124,8 +124,8 @@ func TestStartNextScopeTreePropagatesDimensions(t *testing.T) {
 	keys := styles.DefaultKeyMap
 	role := azure.Role{
 		RoleName:     "Contributor",
-		Scope:        "/providers/Microsoft.Management/managementGroups/Contoso",
-		ScopeDisplay: "Contoso",
+		Scope:        "/providers/Microsoft.Management/managementGroups/example-mg",
+		ScopeDisplay: "example-mg",
 	}
 	w := Wizard{
 		theme:  theme,
@@ -215,8 +215,8 @@ func TestScopeTreeFilterEscDoesNotTriggerWizardBack(t *testing.T) {
 	keys := styles.DefaultKeyMap
 	role := azure.Role{
 		RoleName:     "Contributor",
-		Scope:        "/providers/Microsoft.Management/managementGroups/Contoso",
-		ScopeDisplay: "Contoso",
+		Scope:        "/providers/Microsoft.Management/managementGroups/example-mg",
+		ScopeDisplay: "example-mg",
 	}
 	w := Wizard{
 		theme:  theme,

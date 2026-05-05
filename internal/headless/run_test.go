@@ -381,7 +381,7 @@ func TestRunStatusJSONValid(t *testing.T) {
 }
 
 func TestFilterRolesBareGUID(t *testing.T) {
-	const guid = "e14cf978-da6b-4661-86b4-f02acd680147"
+	const guid = "00000000-0000-0000-0000-000000000000"
 	roles := []azure.Role{
 		{RoleName: "Owner", Scope: "/subscriptions/" + guid, ScopeDisplay: "My Sub"},
 		{RoleName: "Owner", Scope: "/subscriptions/other-sub", ScopeDisplay: "Other Sub"},
@@ -404,7 +404,7 @@ func TestFilterRolesBareGUID(t *testing.T) {
 }
 
 func TestFilterAssignmentsBareGUID(t *testing.T) {
-	const guid = "e14cf978-da6b-4661-86b4-f02acd680147"
+	const guid = "00000000-0000-0000-0000-000000000000"
 	assignments := []azure.ActiveAssignment{
 		{RoleName: "Owner", Scope: "/subscriptions/" + guid, ScopeDisplay: "My Sub"},
 		{RoleName: "Owner", Scope: "/subscriptions/other-sub", ScopeDisplay: "Other Sub"},

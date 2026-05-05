@@ -37,7 +37,7 @@ calling user's eligibilities only.
       "scope": "/providers/Microsoft.Management/managementGroups/{mgID}",
       "roleDefinitionId": "/providers/Microsoft.Management/managementGroups/{mgID}/providers/Microsoft.Authorization/roleDefinitions/{guid}",
       "expandedProperties": {
-        "scope": { "displayName": "Contoso-Platform-QA" },
+        "scope": { "displayName": "example-subscription" },
         "roleDefinition": { "displayName": "Reader" }
       }
     }
@@ -190,7 +190,7 @@ hierarchy depth, and subscription IDs are flat (`/subscriptions/{id}`) regardles
 which management group contains them.
 
 **Child management groups must be treated as expandable nodes**, not discarded. A top-level MG
-(e.g. `Contoso`) may return only child MGs with no subscriptions at the first level. Each child MG
+(e.g. `example-mg`) may return only child MGs with no subscriptions at the first level. Each child MG
 is both selectable (the user can activate at the MG scope itself) and expandable (the user can
 drill into it to find its own children, which may be further MGs or subscriptions).
 
@@ -209,7 +209,7 @@ with `$getAllChildren=true` is the correct and sufficient path.
 ```json
 {
   "value": [
-    { "id": "/providers/Microsoft.Management/managementGroups/Contoso-Standalone", "name": "Contoso-Standalone", "type": "managementgroup", "properties": { "displayName": "" } },
+    { "id": "/providers/Microsoft.Management/managementGroups/example-child-mg", "name": "example-child-mg", "type": "managementgroup", "properties": { "displayName": "" } },
     { "id": "/subscriptions/{subID}", "name": "{subID}", "type": "subscription", "properties": { "displayName": "" } },
     { "id": "/subscriptions/{subID}/resourceGroups/{rgName}", "name": "{rgName}", "type": "resourcegroup", "properties": { "displayName": "" } }
   ],
@@ -262,7 +262,7 @@ The retry uses the same request body — in particular the same MG-level
 `linkedRoleEligibilityScheduleId`. Azure accepts this and activates the role at
 subscription scope rather than the narrower RG.
 
-### Confirmed via curl (Contoso-Platform-QA / my-rg)
+### Confirmed via curl (example-subscription / my-rg)
 
 ```bash
 # RG scope → 403
