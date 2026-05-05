@@ -73,26 +73,17 @@ tasks:
           case "$BRANCH" in
             renovate/*) echo "✗ release:dev is not allowed on renovate/* branches"; exit 1 ;;
           esac
-          RAW=$(git describe --tags --long --dirty 2>/dev/null || echo "")
-          if [ -z "$RAW" ]; then
-            N=$(git rev-list --count HEAD)
-            SHA=$(git rev-parse --short HEAD)
-            VERSION="v0.0.0-dev.${N}-g${SHA}"
-          else
-            BASE=$(echo "$RAW" | sed 's/-[0-9]*-g[0-9a-f]*\(-dirty\)*$//')
-            N=$(echo "$RAW" | sed 's/.*-\([0-9]*\)-g[0-9a-f]*/\1/')
-            SHA=$(echo "$RAW" | sed 's/.*-g\([0-9a-f]*\).*/\1/' | sed 's/-dirty//')
-            DIRTY=$(echo "$RAW" | grep -q 'dirty' && echo "-dirty" || echo "")
-            if [ "$N" = "0" ] && [ -z "$DIRTY" ]; then
-              echo "✗ HEAD is already tagged as $BASE — nothing to pre-release"
-              exit 1
-            fi
-            VERSION="${BASE}-dev.${N}-g${SHA}${DIRTY}"
+          BASE=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+          if [ -z "$BASE" ]; then
+            BASE="v0.0.0"
           fi
-          if echo "$VERSION" | grep -q 'dirty'; then
-            echo "✗ Working tree is dirty — commit or stash changes before releasing"
+          N=$(git rev-list --count "${BASE}..HEAD" 2>/dev/null || git rev-list --count HEAD)
+          SHA=$(git rev-parse --short HEAD)
+          if [ "$N" = "0" ]; then
+            echo "✗ HEAD is already tagged as $BASE — nothing to pre-release"
             exit 1
           fi
+          VERSION="${BASE}-dev.${N}-g${SHA}"
           echo "Proposed version: $VERSION"
           printf "Publish pre-release %s? (y/N): " "$VERSION"
           read -r CONFIRM
