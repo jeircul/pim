@@ -38,7 +38,7 @@ checksum:
 changelog:
   use: git
 snapshot:
-  name_template: '{{ .Tag }}'
+  version_template: '{{ .Tag }}'
 release:
   github:
     owner: jeircul
