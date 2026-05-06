@@ -336,3 +336,26 @@ func TestFilterSearchHitsEmptyQuery(t *testing.T) {
 		t.Errorf("expected 2 hits, got %d", len(got))
 	}
 }
+
+func TestRunSearchJSONPreservesGUIDCase(t *testing.T) {
+	const mixedCaseID = "AAAAAAAA-0000-0000-0000-000000000001"
+	mock := &searchMock{
+		eligibleRoles: []azure.Role{
+			subRole("/subscriptions/"+mixedCaseID, "Case Sub", "Reader"),
+		},
+	}
+	var buf bytes.Buffer
+	if err := runSearch(t.Context(), makeApp("", app.OutputJSON), mock, &buf); err != nil {
+		t.Fatal(err)
+	}
+	var hits []SearchHit
+	if err := json.Unmarshal(buf.Bytes(), &hits); err != nil {
+		t.Fatalf("unmarshal: %v\noutput: %s", err, buf.String())
+	}
+	if len(hits) != 1 {
+		t.Fatalf("expected 1 hit, got %d", len(hits))
+	}
+	if hits[0].SubscriptionID != mixedCaseID {
+		t.Errorf("SubscriptionID = %q, want %q (original case must be preserved)", hits[0].SubscriptionID, mixedCaseID)
+	}
+}

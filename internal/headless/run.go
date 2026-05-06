@@ -214,6 +214,7 @@ func filterRoles(ctx context.Context, client ClientAPI, roles []azure.Role, role
 		}
 
 		if guid := azure.BareSubscriptionGUID(sf); guid != "" {
+			before := len(out)
 			for _, i := range roleIdx {
 				if !azure.IsManagementGroupScope(roles[i].Scope) {
 					continue
@@ -234,7 +235,7 @@ func filterRoles(ctx context.Context, client ClientAPI, roles []azure.Role, role
 					out = append(out, roleTarget{role: roles[i], scope: "/subscriptions/" + guid})
 				}
 			}
-			if len(out) > 0 {
+			if len(out) > before {
 				continue
 			}
 		}

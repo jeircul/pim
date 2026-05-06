@@ -592,3 +592,46 @@ func TestFilterRolesDirectSubGUIDNoExtraCall(t *testing.T) {
 		t.Errorf("mgSubsCalls = %d; want 0", mc.mgSubsCalls)
 	}
 }
+
+func TestFilterRolesMGFanoutSecondScopeDisplayFallback(t *testing.T) {
+	// First scope filter: bare GUID that matches an MG child (produces 1 target via MG fan-out).
+	// Second scope filter: display-name string that matches a direct-sub role.
+	// Bug: old code checked `len(out) > 0` after MG fan-out, so the second filter
+	// skipped display-name fallback because out was already non-empty from the first.
+	const mgChildGUID = "eeeeeeee-0000-0000-0000-000000000005"
+	const directSubScope = "/subscriptions/ffffffff-0000-0000-0000-000000000006"
+	const mgScopeLocal = "/providers/Microsoft.Management/managementGroups/mg-local"
+
+	roles := []azure.Role{
+		{
+			RoleName:              "Owner",
+			Scope:                 mgScopeLocal,
+			ScopeDisplay:          "mg-local",
+			RoleDefinitionID:      "rd-mg",
+			EligibilityScheduleID: "/sched/mg",
+		},
+		{
+			RoleName:              "Owner",
+			Scope:                 directSubScope,
+			ScopeDisplay:          "Direct Production",
+			RoleDefinitionID:      "rd-direct",
+			EligibilityScheduleID: "/sched/direct",
+		},
+	}
+	mc := &mockClient{
+		mgSubs: map[string][]azure.Subscription{
+			"mg-local": {{ID: mgChildGUID, DisplayName: "MG Child Sub"}},
+		},
+	}
+
+	targets, err := filterRoles(context.Background(), mc, roles,
+		[]string{"Owner"},
+		[]string{mgChildGUID, "Direct Production"},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(targets) != 2 {
+		t.Fatalf("want 2 targets, got %d: %+v", len(targets), targets)
+	}
+}

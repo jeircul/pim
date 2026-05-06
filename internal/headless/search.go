@@ -69,6 +69,7 @@ func runSearch(ctx context.Context, a *app.App, client ClientAPI, out io.Writer)
 // Roles for the same subscription are merged into one hit.
 func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role) ([]SearchHit, error) {
 	type acc struct {
+		id      string
 		display string
 		mg      string
 		roles   map[string]struct{}
@@ -80,7 +81,7 @@ func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role) 
 		key := strings.ToLower(subID)
 		a, ok := bySub[key]
 		if !ok {
-			a = &acc{display: display, mg: mg, roles: map[string]struct{}{}}
+			a = &acc{id: subID, display: display, mg: mg, roles: map[string]struct{}{}}
 			bySub[key] = a
 		}
 		if a.display == "" {
@@ -114,14 +115,14 @@ func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role) 
 	}
 
 	out := make([]SearchHit, 0, len(bySub))
-	for id, a := range bySub {
+	for _, a := range bySub {
 		names := make([]string, 0, len(a.roles))
 		for n := range a.roles {
 			names = append(names, n)
 		}
 		sort.Strings(names)
 		out = append(out, SearchHit{
-			SubscriptionID:  id,
+			SubscriptionID:  a.id,
 			DisplayName:     a.display,
 			ManagementGroup: a.mg,
 			EligibleRoles:   names,
