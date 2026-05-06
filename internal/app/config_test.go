@@ -122,3 +122,32 @@ func TestCanAutoAdvance(t *testing.T) {
 		t.Error("partial config should not CanAutoAdvance")
 	}
 }
+
+func TestParse_search(t *testing.T) {
+	tests := []struct {
+		args       []string
+		wantCmd    string
+		wantQuery  string
+		wantOutput OutputFormat
+	}{
+		{[]string{"search"}, CmdSearch, "", OutputTable},
+		{[]string{"search", "q901"}, CmdSearch, "q901", OutputTable},
+		{[]string{"search", "q901", "--output", "json"}, CmdSearch, "q901", OutputJSON},
+	}
+	for _, tc := range tests {
+		cfg, err := Parse(tc.args)
+		if err != nil {
+			t.Errorf("Parse(%v) unexpected err: %v", tc.args, err)
+			continue
+		}
+		if cfg.Command != tc.wantCmd {
+			t.Errorf("Parse(%v) Command = %q, want %q", tc.args, cfg.Command, tc.wantCmd)
+		}
+		if cfg.SearchQuery != tc.wantQuery {
+			t.Errorf("Parse(%v) SearchQuery = %q, want %q", tc.args, cfg.SearchQuery, tc.wantQuery)
+		}
+		if cfg.Output != tc.wantOutput {
+			t.Errorf("Parse(%v) Output = %v, want %v", tc.args, cfg.Output, tc.wantOutput)
+		}
+	}
+}

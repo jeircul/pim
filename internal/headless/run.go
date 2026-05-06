@@ -20,6 +20,7 @@ type ClientAPI interface {
 	GetEligibleRoles(ctx context.Context) ([]azure.Role, error)
 	ActivateRole(ctx context.Context, role azure.Role, principalID, justification string, minutes int, targetScope string) (*azure.ScheduleResponse, error)
 	DeactivateRole(ctx context.Context, assignment azure.ActiveAssignment, principalID string) (*azure.ScheduleResponse, error)
+	ListManagementGroupSubscriptions(ctx context.Context, mgID string) ([]azure.Subscription, error)
 }
 
 var _ ClientAPI = (*azure.Client)(nil)
@@ -40,6 +41,8 @@ func Run(ctx context.Context, a *app.App) error {
 		return runDeactivate(ctx, a, client, user, os.Stdout)
 	case app.CmdActivate:
 		return runActivate(ctx, a, client, user, os.Stdout)
+	case app.CmdSearch:
+		return runSearch(ctx, a, client, os.Stdout)
 	default:
 		return runStatus(ctx, a, client, user, os.Stdout)
 	}
@@ -135,7 +138,7 @@ func runActivate(ctx context.Context, a *app.App, client ClientAPI, user *azure.
 		return fmt.Errorf("get eligible roles: %w", err)
 	}
 
-	targets, err := filterRoles(roles, cfg.Roles, cfg.Scopes)
+	targets, err := filterRoles(ctx, client, roles, cfg.Roles, cfg.Scopes)
 	if err != nil {
 		return err
 	}
@@ -170,7 +173,7 @@ type roleTarget struct {
 	scope string
 }
 
-func filterRoles(roles []azure.Role, roleFilters, scopeFilters []string) ([]roleTarget, error) {
+func filterRoles(ctx context.Context, client ClientAPI, roles []azure.Role, roleFilters, scopeFilters []string) ([]roleTarget, error) {
 	roleNames := make([]string, len(roles))
 	for i, r := range roles {
 		roleNames[i] = r.RoleName
@@ -193,6 +196,7 @@ func filterRoles(roles []azure.Role, roleFilters, scopeFilters []string) ([]role
 		scopeDisplays[i] = r.ScopeDisplay
 	}
 
+	mgCache := map[string]map[string]struct{}{}
 	var out []roleTarget
 	for _, sf := range scopeFilters {
 		expanded, _ := azure.ExpandScopeFilter(sf)
@@ -207,6 +211,32 @@ func filterRoles(roles []azure.Role, roleFilters, scopeFilters []string) ([]role
 				out = append(out, roleTarget{role: roles[i], scope: expanded})
 			}
 			continue
+		}
+
+		if guid := azure.BareSubscriptionGUID(sf); guid != "" {
+			for _, i := range roleIdx {
+				if !azure.IsManagementGroupScope(roles[i].Scope) {
+					continue
+				}
+				mgID := azure.ManagementGroupIDFromScope(roles[i].Scope)
+				if _, cached := mgCache[mgID]; !cached {
+					list, err := client.ListManagementGroupSubscriptions(ctx, mgID)
+					if err != nil {
+						return nil, fmt.Errorf("list subscriptions under management group %s: %w", mgID, err)
+					}
+					set := make(map[string]struct{}, len(list))
+					for _, s := range list {
+						set[strings.ToLower(s.ID)] = struct{}{}
+					}
+					mgCache[mgID] = set
+				}
+				if _, ok := mgCache[mgID][strings.ToLower(guid)]; ok {
+					out = append(out, roleTarget{role: roles[i], scope: "/subscriptions/" + guid})
+				}
+			}
+			if len(out) > 0 {
+				continue
+			}
 		}
 
 		candidateDisplays := make([]string, len(roleIdx))

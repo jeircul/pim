@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -38,7 +39,7 @@ func TestFilterRoles(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := filterRoles(roles, tc.roleFilters, tc.scopeFilters)
+			got, err := filterRoles(context.Background(), &mockClient{}, roles, tc.roleFilters, tc.scopeFilters)
 			if tc.wantErr {
 				if err == nil {
 					t.Errorf("filterRoles() want error, got nil")
@@ -62,7 +63,7 @@ func TestFilterRolesAmbiguous(t *testing.T) {
 		{RoleName: "Administrator (Privileged)", Scope: "/subscriptions/aaa", ScopeDisplay: "My-Sub-A"},
 	}
 
-	_, err := filterRoles(roles, []string{"admin"}, nil)
+	_, err := filterRoles(context.Background(), &mockClient{}, roles, []string{"admin"}, nil)
 	if err == nil {
 		t.Fatal("expected ambiguity error for 'admin' matching multiple roles, got nil")
 	}
@@ -74,7 +75,7 @@ func TestFilterRolesSingleSubstringAccepted(t *testing.T) {
 		{RoleName: "Reader", Scope: "/subscriptions/aaa", ScopeDisplay: "My-Sub-A"},
 	}
 
-	got, err := filterRoles(roles, []string{"ontrib"}, nil)
+	got, err := filterRoles(context.Background(), &mockClient{}, roles, []string{"ontrib"}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -89,7 +90,7 @@ func TestFilterRolesExactNotSubstring(t *testing.T) {
 		{RoleName: "Reader (privileged)", Scope: "/subscriptions/aaa", ScopeDisplay: "My-Sub-A"},
 	}
 
-	got, err := filterRoles(roles, []string{"Reader"}, nil)
+	got, err := filterRoles(context.Background(), &mockClient{}, roles, []string{"Reader"}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -104,7 +105,7 @@ func TestFilterScopeAmbiguous(t *testing.T) {
 		{RoleName: "Owner", Scope: "/subscriptions/bbb", ScopeDisplay: "prod-west"},
 	}
 
-	_, err := filterRoles(roles, []string{"Owner"}, []string{"prod"})
+	_, err := filterRoles(context.Background(), &mockClient{}, roles, []string{"Owner"}, []string{"prod"})
 	if err == nil {
 		t.Fatal("expected ambiguity error for 'prod' matching 'prod-east' and 'prod-west', got nil")
 	}

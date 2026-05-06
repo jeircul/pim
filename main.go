@@ -70,7 +70,7 @@ func run() error {
 	ctx, cancel := app.DefaultContext()
 	defer cancel()
 
-	if cfg.IsHeadless() {
+	if cfg.IsHeadless() || cfg.Command == app.CmdSearch {
 		if err := a.Connect(ctx); err != nil {
 			return err
 		}

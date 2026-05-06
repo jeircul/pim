@@ -23,6 +23,9 @@ type mockClient struct {
 	eligibleErr   error
 	activateErr   error
 	deactivateErr error
+	mgSubs        map[string][]azure.Subscription
+	mgSubsErr     error
+	mgSubsCalls   int
 }
 
 func (m *mockClient) GetCurrentUser(_ context.Context) (*azure.User, error) {
@@ -49,6 +52,14 @@ func (m *mockClient) DeactivateRole(_ context.Context, assignment azure.ActiveAs
 		return nil, m.deactivateErr
 	}
 	return &azure.ScheduleResponse{}, nil
+}
+
+func (m *mockClient) ListManagementGroupSubscriptions(_ context.Context, mgID string) ([]azure.Subscription, error) {
+	m.mgSubsCalls++
+	if m.mgSubsErr != nil {
+		return nil, m.mgSubsErr
+	}
+	return m.mgSubs[mgID], nil
 }
 
 func newTestApp(t *testing.T, cfg app.Config) *app.App {
@@ -387,7 +398,7 @@ func TestFilterRolesBareGUID(t *testing.T) {
 		{RoleName: "Owner", Scope: "/subscriptions/other-sub", ScopeDisplay: "Other Sub"},
 	}
 
-	targets, err := filterRoles(roles, []string{"Owner"}, []string{guid})
+	targets, err := filterRoles(context.Background(), &mockClient{}, roles, []string{"Owner"}, []string{guid})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -419,5 +430,165 @@ func TestFilterAssignmentsBareGUID(t *testing.T) {
 	}
 	if out[0].Scope != "/subscriptions/"+guid {
 		t.Errorf("assignment scope = %q; want /subscriptions/%s", out[0].Scope, guid)
+	}
+}
+
+const mgScope = "/providers/Microsoft.Management/managementGroups/mg-root"
+const childGUID = "aaaaaaaa-0000-0000-0000-000000000001"
+
+func mgRole() azure.Role {
+	return azure.Role{
+		RoleName:              "Owner",
+		Scope:                 mgScope,
+		ScopeDisplay:          "mg-root",
+		RoleDefinitionID:      "rd-mg",
+		EligibilityScheduleID: "/sched/mg",
+	}
+}
+
+func TestFilterRolesMGInheritedGUID(t *testing.T) {
+	roles := []azure.Role{mgRole()}
+	mc := &mockClient{
+		mgSubs: map[string][]azure.Subscription{
+			"mg-root": {{ID: childGUID}},
+		},
+	}
+
+	targets, err := filterRoles(context.Background(), mc, roles, []string{"Owner"}, []string{childGUID})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(targets) != 1 {
+		t.Fatalf("want 1 target, got %d", len(targets))
+	}
+	if targets[0].scope != "/subscriptions/"+childGUID {
+		t.Errorf("scope = %q; want /subscriptions/%s", targets[0].scope, childGUID)
+	}
+	if targets[0].role.Scope != mgScope {
+		t.Errorf("role.Scope = %q; want %q", targets[0].role.Scope, mgScope)
+	}
+}
+
+func TestFilterRolesMGInheritedGUIDSlashPrefix(t *testing.T) {
+	roles := []azure.Role{mgRole()}
+	mc := &mockClient{
+		mgSubs: map[string][]azure.Subscription{
+			"mg-root": {{ID: childGUID}},
+		},
+	}
+
+	targets, err := filterRoles(context.Background(), mc, roles, []string{"Owner"}, []string{"/subscriptions/" + childGUID})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(targets) != 1 {
+		t.Fatalf("want 1 target, got %d", len(targets))
+	}
+	if targets[0].scope != "/subscriptions/"+childGUID {
+		t.Errorf("scope = %q; want /subscriptions/%s", targets[0].scope, childGUID)
+	}
+}
+
+func TestFilterRolesMGInheritedGUIDTrailingSlash(t *testing.T) {
+	roles := []azure.Role{mgRole()}
+	mc := &mockClient{
+		mgSubs: map[string][]azure.Subscription{
+			"mg-root": {{ID: childGUID}},
+		},
+	}
+
+	targets, err := filterRoles(context.Background(), mc, roles, []string{"Owner"}, []string{"/subscriptions/" + childGUID + "/"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(targets) != 1 {
+		t.Fatalf("want 1 target, got %d", len(targets))
+	}
+	if targets[0].scope != "/subscriptions/"+childGUID {
+		t.Errorf("scope = %q; want /subscriptions/%s", targets[0].scope, childGUID)
+	}
+}
+
+func TestFilterRolesMGGUIDNotChild(t *testing.T) {
+	roles := []azure.Role{mgRole()}
+	mc := &mockClient{
+		mgSubs: map[string][]azure.Subscription{
+			"mg-root": {{ID: "bbbbbbbb-0000-0000-0000-000000000002"}},
+		},
+	}
+
+	targets, err := filterRoles(context.Background(), mc, roles, []string{"Owner"}, []string{childGUID})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(targets) != 0 {
+		t.Errorf("want 0 targets, got %d", len(targets))
+	}
+}
+
+func TestFilterRolesMGFanoutCachePerMG(t *testing.T) {
+	const guid2 = "cccccccc-0000-0000-0000-000000000003"
+	roles := []azure.Role{
+		mgRole(),
+		{
+			RoleName:              "Contributor",
+			Scope:                 mgScope,
+			ScopeDisplay:          "mg-root",
+			RoleDefinitionID:      "rd-mg2",
+			EligibilityScheduleID: "/sched/mg2",
+		},
+	}
+	mc := &mockClient{
+		mgSubs: map[string][]azure.Subscription{
+			"mg-root": {{ID: childGUID}, {ID: guid2}},
+		},
+	}
+
+	_, err := filterRoles(context.Background(), mc, roles, []string{"Owner", "Contributor"}, []string{childGUID, guid2})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if mc.mgSubsCalls != 1 {
+		t.Errorf("mgSubsCalls = %d; want 1", mc.mgSubsCalls)
+	}
+}
+
+func TestFilterRolesMGFanoutErrorWraps(t *testing.T) {
+	roles := []azure.Role{mgRole()}
+	mc := &mockClient{
+		mgSubsErr: fmt.Errorf("api unavailable"),
+	}
+
+	_, err := filterRoles(context.Background(), mc, roles, []string{"Owner"}, []string{childGUID})
+	if err == nil {
+		t.Fatal("want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "list subscriptions under management group") {
+		t.Errorf("error %q does not contain expected prefix", err.Error())
+	}
+}
+
+func TestFilterRolesDirectSubGUIDNoExtraCall(t *testing.T) {
+	const guid = "dddddddd-0000-0000-0000-000000000004"
+	roles := []azure.Role{
+		{
+			RoleName:              "Owner",
+			Scope:                 "/subscriptions/" + guid,
+			ScopeDisplay:          "Direct Sub",
+			RoleDefinitionID:      "rd-direct",
+			EligibilityScheduleID: "/sched/direct",
+		},
+	}
+	mc := &mockClient{}
+
+	targets, err := filterRoles(context.Background(), mc, roles, []string{"Owner"}, []string{guid})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(targets) != 1 {
+		t.Fatalf("want 1 target, got %d", len(targets))
+	}
+	if mc.mgSubsCalls != 0 {
+		t.Errorf("mgSubsCalls = %d; want 0", mc.mgSubsCalls)
 	}
 }

@@ -13,6 +13,7 @@ const (
 	CmdDeactivate = "deactivate"
 	CmdStatus     = "status"
 	CmdCompletion = "completion"
+	CmdSearch     = "search"
 )
 
 // OutputFormat controls headless output style.
@@ -47,6 +48,9 @@ type Config struct {
 
 	// CompletionShell is set when Command == CmdCompletion (bash | zsh | fish).
 	CompletionShell string
+
+	// SearchQuery is the optional filter passed to pim search.
+	SearchQuery string
 }
 
 // Parse parses os.Args[1:] into a Config.
@@ -74,6 +78,13 @@ func Parse(args []string) (Config, error) {
 			cfg.CompletionShell = strings.ToLower(args[1])
 		}
 		return cfg, nil
+	case CmdSearch:
+		cfg.Command = CmdSearch
+		args = args[1:]
+		if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+			cfg.SearchQuery = args[0]
+			args = args[1:]
+		}
 	case "version", "v":
 		cfg.Version = true
 		return cfg, nil
@@ -153,6 +164,7 @@ Usage:
   pim activate [flags]         activate roles (TUI, flags pre-fill wizard)
   pim deactivate               deactivate roles (TUI)
   pim status                   view active/eligible roles (TUI)
+  pim search [query]           list PIM-eligible subscriptions; optional query filters by name or GUID (exact-first, substring-fallback); use --output json for machine-readable output
   pim completion <bash|zsh|fish>  print shell completion script
   pim version                  print version
 

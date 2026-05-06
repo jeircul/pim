@@ -110,6 +110,23 @@ func ScopeIsChildOf(child, parent string) bool {
 
 var reGUID = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
+// BareSubscriptionGUID returns the subscription GUID when filter is a bare GUID
+// or "/subscriptions/<guid>" with no further path segments. Returns "" otherwise.
+func BareSubscriptionGUID(filter string) string {
+	f := strings.TrimSpace(filter)
+	if reGUID.MatchString(f) {
+		return f
+	}
+	const prefix = "/subscriptions/"
+	if len(f) > len(prefix) && strings.EqualFold(f[:len(prefix)], prefix) {
+		rest := strings.TrimRight(f[len(prefix):], "/")
+		if !strings.Contains(rest, "/") && reGUID.MatchString(rest) {
+			return rest
+		}
+	}
+	return ""
+}
+
 // ExpandScopeFilter normalizes a user-supplied scope filter to an ARM path when
 // the input looks like a bare subscription GUID or a bare management-group name
 // (no slashes). ARM paths are returned unchanged.
