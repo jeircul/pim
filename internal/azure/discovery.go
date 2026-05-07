@@ -52,13 +52,13 @@ func classifyChildResources(resources []childResource) ([]ManagementGroup, []Sub
 func (c *Client) ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) ([]Subscription, error) {
 	var out []Subscription
 	visited := map[string]struct{}{}
-	if err := c.walkMG(ctx, mgID, &out, visited); err != nil {
+	if err := c.walkMG(ctx, mgID, &out, visited, 0); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *Client) walkMG(ctx context.Context, mgID string, out *[]Subscription, visited map[string]struct{}) error {
+func (c *Client) walkMG(ctx context.Context, mgID string, out *[]Subscription, visited map[string]struct{}, depth int) error {
 	if _, seen := visited[strings.ToLower(mgID)]; seen {
 		return nil
 	}
@@ -66,11 +66,15 @@ func (c *Client) walkMG(ctx context.Context, mgID string, out *[]Subscription, v
 
 	mgs, subs, err := c.ListManagementGroupChildren(ctx, mgID)
 	if err != nil {
+		if depth > 0 {
+			// inaccessible intermediate node — skip subtree, not fatal
+			return nil
+		}
 		return fmt.Errorf("list children of management group %s: %w", mgID, err)
 	}
 	*out = append(*out, subs...)
 	for _, child := range mgs {
-		if err := c.walkMG(ctx, child.ID, out, visited); err != nil {
+		if err := c.walkMG(ctx, child.ID, out, visited, depth+1); err != nil {
 			return err
 		}
 	}
