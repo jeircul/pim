@@ -59,7 +59,7 @@ func (c *Client) ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) (
 	var (
 		mu      sync.Mutex
 		wg      sync.WaitGroup
-		sem     = make(chan struct{}, 4)
+		sem     = make(chan struct{}, 1)
 		visited = map[string]struct{}{}
 	)
 

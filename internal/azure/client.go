@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -93,23 +94,50 @@ func (c *Client) graphToken(ctx context.Context) (string, error) {
 	return c.getToken(ctx, "https://graph.microsoft.com/.default")
 }
 
+// doRequest executes an HTTP request and returns the response.
+// body must be nil or re-readable for retries; all current callers pass nil.
 func (c *Client) doRequest(ctx context.Context, method, reqURL, token string, body io.Reader) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, method, reqURL, body)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "pim/2")
+	const maxRetries = 4
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, method, reqURL, body)
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", "pim/2")
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("execute request: %w", err)
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("execute request: %w", err)
+		}
+		if resp.StatusCode == http.StatusTooManyRequests {
+			resp.Body.Close()
+			wait := retryAfter(resp, attempt)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(wait):
+			}
+			continue
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return nil, errorFromResponse(resp)
+		}
+		return resp, nil
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, errorFromResponse(resp)
+	return nil, fmt.Errorf("request to %s exceeded retry limit after 429 responses", reqURL)
+}
+
+// retryAfter returns the duration to wait before retrying a 429 response.
+// It reads the Retry-After header (seconds) and falls back to exponential backoff.
+func retryAfter(resp *http.Response, attempt int) time.Duration {
+	if s := resp.Header.Get("Retry-After"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
+			return time.Duration(n) * time.Second
+		}
 	}
-	return resp, nil
+	return time.Duration(1<<attempt) * time.Second
 }
 
 func allowDeviceLogin() bool {
