@@ -54,7 +54,7 @@ func (m *mockClient) DeactivateRole(_ context.Context, assignment azure.ActiveAs
 	return &azure.ScheduleResponse{}, nil
 }
 
-func (m *mockClient) ListManagementGroupSubscriptions(_ context.Context, mgID string) ([]azure.Subscription, error) {
+func (m *mockClient) ListAllSubscriptionsUnderMG(_ context.Context, mgID string) ([]azure.Subscription, error) {
 	m.mgSubsCalls++
 	if m.mgSubsErr != nil {
 		return nil, m.mgSubsErr

@@ -46,13 +46,35 @@ func classifyChildResources(resources []childResource) ([]ManagementGroup, []Sub
 	return mgs, subs
 }
 
-// ListManagementGroupSubscriptions returns subscriptions under a management group
-// that the caller is PIM-eligible to activate. Uses the eligibleChildResources API
-// with getAllChildren=true so nested subscriptions are included. An empty result
-// means no eligible child scopes exist, which is valid and not an error.
-func (c *Client) ListManagementGroupSubscriptions(ctx context.Context, mgID string) ([]Subscription, error) {
-	_, subs, err := c.ListManagementGroupChildren(ctx, mgID)
-	return subs, err
+// ListAllSubscriptionsUnderMG returns all subscriptions reachable under a
+// management group by recursively expanding child management groups.
+// Uses the same eligibleChildResources API as the TUI scope tree.
+func (c *Client) ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) ([]Subscription, error) {
+	var out []Subscription
+	visited := map[string]struct{}{}
+	if err := c.walkMG(ctx, mgID, &out, visited); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *Client) walkMG(ctx context.Context, mgID string, out *[]Subscription, visited map[string]struct{}) error {
+	if _, seen := visited[strings.ToLower(mgID)]; seen {
+		return nil
+	}
+	visited[strings.ToLower(mgID)] = struct{}{}
+
+	mgs, subs, err := c.ListManagementGroupChildren(ctx, mgID)
+	if err != nil {
+		return fmt.Errorf("list children of management group %s: %w", mgID, err)
+	}
+	*out = append(*out, subs...)
+	for _, child := range mgs {
+		if err := c.walkMG(ctx, child.ID, out, visited); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // fetchEligibleChildResources fetches PIM-eligible child resources under any

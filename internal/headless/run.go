@@ -20,7 +20,7 @@ type ClientAPI interface {
 	GetEligibleRoles(ctx context.Context) ([]azure.Role, error)
 	ActivateRole(ctx context.Context, role azure.Role, principalID, justification string, minutes int, targetScope string) (*azure.ScheduleResponse, error)
 	DeactivateRole(ctx context.Context, assignment azure.ActiveAssignment, principalID string) (*azure.ScheduleResponse, error)
-	ListManagementGroupSubscriptions(ctx context.Context, mgID string) ([]azure.Subscription, error)
+	ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) ([]azure.Subscription, error)
 }
 
 var _ ClientAPI = (*azure.Client)(nil)
@@ -221,7 +221,7 @@ func filterRoles(ctx context.Context, client ClientAPI, roles []azure.Role, role
 				}
 				mgID := azure.ManagementGroupIDFromScope(roles[i].Scope)
 				if _, cached := mgCache[mgID]; !cached {
-					list, err := client.ListManagementGroupSubscriptions(ctx, mgID)
+					list, err := client.ListAllSubscriptionsUnderMG(ctx, mgID)
 					if err != nil {
 						return nil, fmt.Errorf("list subscriptions under management group %s: %w", mgID, err)
 					}

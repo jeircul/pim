@@ -65,7 +65,7 @@ func runSearch(ctx context.Context, a *app.App, client ClientAPI, out io.Writer)
 
 // buildSearchHits walks all eligible roles and flattens them into a deduplicated
 // list of activatable subscriptions. MG-scoped roles are expanded via
-// ListManagementGroupSubscriptions (cached per MG). RG-scoped roles are excluded.
+// ListAllSubscriptionsUnderMG (cached per MG). RG-scoped roles are excluded.
 // Roles for the same subscription are merged into one hit.
 func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role) ([]SearchHit, error) {
 	type acc struct {
@@ -101,7 +101,7 @@ func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role) 
 			mgID := azure.ManagementGroupIDFromScope(r.Scope)
 			subs, ok := mgCache[mgID]
 			if !ok {
-				list, err := client.ListManagementGroupSubscriptions(ctx, mgID)
+				list, err := client.ListAllSubscriptionsUnderMG(ctx, mgID)
 				if err != nil {
 					return nil, fmt.Errorf("list subscriptions under management group %s: %w", mgID, err)
 				}

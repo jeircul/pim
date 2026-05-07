@@ -35,7 +35,7 @@ func (m *searchMock) ActivateRole(_ context.Context, _ azure.Role, _, _ string, 
 func (m *searchMock) DeactivateRole(_ context.Context, _ azure.ActiveAssignment, _ string) (*azure.ScheduleResponse, error) {
 	return nil, nil
 }
-func (m *searchMock) ListManagementGroupSubscriptions(_ context.Context, mgID string) ([]azure.Subscription, error) {
+func (m *searchMock) ListAllSubscriptionsUnderMG(_ context.Context, mgID string) ([]azure.Subscription, error) {
 	m.mgSubsCalls++
 	if m.mgSubsErr != nil {
 		return nil, m.mgSubsErr
