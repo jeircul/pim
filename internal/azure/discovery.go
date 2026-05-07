@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 )
 
 // ListManagementGroupChildren returns the direct eligible children of a management group.
@@ -49,42 +51,68 @@ func classifyChildResources(resources []childResource) ([]ManagementGroup, []Sub
 // ListAllSubscriptionsUnderMG returns all subscriptions reachable under a
 // management group by recursively expanding child management groups.
 // The ARM token is acquired once and reused for all requests.
-// Inaccessible intermediate nodes are skipped; their paths are returned as
-// warnings so callers can surface them without aborting.
+// Sibling nodes are expanded concurrently (bounded to 8 workers) so a stalled
+// node does not delay its siblings. Inaccessible intermediate nodes are
+// skipped; their paths are returned as warnings so callers can surface them
+// without aborting.
 func (c *Client) ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) (subs []Subscription, warnings []string, err error) {
 	token, err := c.armToken(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("acquire ARM token: %w", err)
 	}
 
-	visited := map[string]struct{}{}
-	queue := []string{mgID}
+	const workers = 8
+	sem := make(chan struct{}, workers)
 
-	for len(queue) > 0 {
-		id := queue[0]
-		queue = queue[1:]
+	var (
+		mu      sync.Mutex
+		wg      sync.WaitGroup
+		visited = map[string]struct{}{}
+	)
 
+	var enqueue func(id string, depth int)
+	enqueue = func(id string, depth int) {
 		key := strings.ToLower(id)
 		if _, seen := visited[key]; seen {
-			continue
+			return
 		}
 		visited[key] = struct{}{}
 
-		mgs, ss, e := c.listManagementGroupChildrenWithToken(ctx, id, token)
-		if e != nil {
-			if id == mgID {
-				return nil, nil, fmt.Errorf("list children of management group %s: %w", id, e)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			nodeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+			mgs, ss, e := c.listManagementGroupChildrenWithToken(nodeCtx, id, token)
+			cancel()
+
+			mu.Lock()
+			defer mu.Unlock()
+			if e != nil {
+				if depth == 0 {
+					if err == nil {
+						err = fmt.Errorf("list children of management group %s: %w", id, e)
+					}
+					return
+				}
+				warnings = append(warnings, fmt.Sprintf("skip MG %s: %v", id, e))
+				return
 			}
-			warnings = append(warnings, fmt.Sprintf("skip MG %s: %v", id, e))
-			continue
-		}
-		subs = append(subs, ss...)
-		for _, child := range mgs {
-			queue = append(queue, child.ID)
-		}
+			subs = append(subs, ss...)
+			for _, child := range mgs {
+				enqueue(child.ID, depth+1)
+			}
+		}()
 	}
 
-	return subs, warnings, nil
+	mu.Lock()
+	enqueue(mgID, 0)
+	mu.Unlock()
+
+	wg.Wait()
+	return subs, warnings, err
 }
 
 func (c *Client) listManagementGroupChildrenWithToken(ctx context.Context, mgID, token string) ([]ManagementGroup, []Subscription, error) {
