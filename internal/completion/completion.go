@@ -17,7 +17,7 @@ func Bash(w io.Writer) {
     local activate_flags="$common_flags"
     local deactivate_flags="--role -r --scope --headless --output -o --config-dir"
     local status_flags="--role -r --scope --headless --output -o --config-dir"
-    local search_flags="--output -o --config-dir"
+    local search_flags="--output -o --config-dir --mg"
 
     case "$prev" in
         --output|-o)
@@ -134,6 +134,7 @@ _pim() {
                     _arguments \
                         '--output[output format]:format:(table json)' \
                         '-o[output format]:format:(table json)' \
+                        '--mg[limit to management group]:mg name' \
                         '--config-dir[override config directory]:dir:_directories'
                     ;;
                 completion)
@@ -225,6 +226,8 @@ complete -c pim -n "__fish_seen_subcommand_from status" \
 complete -c pim -n "__fish_seen_subcommand_from search" \
     -l output -s o   -d "output format" \
     -a "table json"
+complete -c pim -n "__fish_seen_subcommand_from search" \
+    -l mg            -d "limit to management group (exact name or substring)"
 complete -c pim -n "__fish_seen_subcommand_from search" \
     -l config-dir    -d "override config directory"
 

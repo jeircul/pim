@@ -18,6 +18,7 @@ type searchMock struct {
 	mgSubs        map[string][]azure.Subscription
 	mgSubsErr     error
 	mgSubsCalls   int
+	mgWarnings    map[string][]string
 }
 
 func (m *searchMock) GetCurrentUser(_ context.Context) (*azure.User, error) {
@@ -35,12 +36,16 @@ func (m *searchMock) ActivateRole(_ context.Context, _ azure.Role, _, _ string, 
 func (m *searchMock) DeactivateRole(_ context.Context, _ azure.ActiveAssignment, _ string) (*azure.ScheduleResponse, error) {
 	return nil, nil
 }
-func (m *searchMock) ListAllSubscriptionsUnderMG(_ context.Context, mgID string) ([]azure.Subscription, error) {
+func (m *searchMock) ListAllSubscriptionsUnderMG(_ context.Context, mgID string) ([]azure.Subscription, []string, error) {
 	m.mgSubsCalls++
 	if m.mgSubsErr != nil {
-		return nil, m.mgSubsErr
+		return nil, nil, m.mgSubsErr
 	}
-	return m.mgSubs[mgID], nil
+	var warnings []string
+	if m.mgWarnings != nil {
+		warnings = m.mgWarnings[mgID]
+	}
+	return m.mgSubs[mgID], warnings, nil
 }
 
 func makeApp(query string, output app.OutputFormat) *app.App {
@@ -357,5 +362,96 @@ func TestRunSearchJSONPreservesGUIDCase(t *testing.T) {
 	}
 	if hits[0].SubscriptionID != mixedCaseID {
 		t.Errorf("SubscriptionID = %q, want %q (original case must be preserved)", hits[0].SubscriptionID, mixedCaseID)
+	}
+}
+
+func TestFilterRolesByMGExact(t *testing.T) {
+	roles := []azure.Role{
+		{Scope: "/providers/Microsoft.Management/managementGroups/Omnia", ScopeDisplay: "Omnia", RoleName: "Owner"},
+		{Scope: "/providers/Microsoft.Management/managementGroups/Other", ScopeDisplay: "Other", RoleName: "Reader"},
+	}
+	got := filterRolesByMG(roles, "Omnia")
+	if len(got) != 1 || got[0].ScopeDisplay != "Omnia" {
+		t.Errorf("filterRolesByMG exact: got %+v", got)
+	}
+}
+
+func TestFilterRolesByMGSubstring(t *testing.T) {
+	roles := []azure.Role{
+		{Scope: "/providers/Microsoft.Management/managementGroups/omnia-prod", ScopeDisplay: "Omnia Prod", RoleName: "Owner"},
+		{Scope: "/providers/Microsoft.Management/managementGroups/other", ScopeDisplay: "Other", RoleName: "Reader"},
+	}
+	got := filterRolesByMG(roles, "omnia")
+	if len(got) != 1 || got[0].ScopeDisplay != "Omnia Prod" {
+		t.Errorf("filterRolesByMG substring: got %+v", got)
+	}
+}
+
+func TestFilterRolesByMGNoMatch(t *testing.T) {
+	roles := []azure.Role{
+		{Scope: "/providers/Microsoft.Management/managementGroups/alpha", ScopeDisplay: "Alpha", RoleName: "Owner"},
+	}
+	got := filterRolesByMG(roles, "zzz")
+	if len(got) != 0 {
+		t.Errorf("filterRolesByMG no match: expected empty, got %+v", got)
+	}
+}
+
+func makeAppMG(mgFilter string) *app.App {
+	cfg := app.Config{
+		Command:  app.CmdSearch,
+		MGFilter: mgFilter,
+		Output:   app.OutputTable,
+	}
+	return &app.App{Config: cfg}
+}
+
+func TestRunSearchMGFilter(t *testing.T) {
+	omniaScope := "/providers/Microsoft.Management/managementGroups/Omnia"
+	otherScope := "/providers/Microsoft.Management/managementGroups/Other"
+	mock := &searchMock{
+		eligibleRoles: []azure.Role{
+			searchMGRole(omniaScope, "Owner"),
+			searchMGRole(otherScope, "Reader"),
+		},
+		mgSubs: map[string][]azure.Subscription{
+			"Omnia": {{ID: "sub-omnia", DisplayName: "Omnia Sub"}},
+			"Other": {{ID: "sub-other", DisplayName: "Other Sub"}},
+		},
+	}
+	var buf bytes.Buffer
+	if err := runSearch(t.Context(), makeAppMG("Omnia"), mock, &buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Omnia Sub") {
+		t.Errorf("expected Omnia Sub in output, got: %s", out)
+	}
+	if strings.Contains(out, "Other Sub") {
+		t.Errorf("unexpected Other Sub in output: %s", out)
+	}
+}
+
+func TestRunSearchWarningsSentToStderr(t *testing.T) {
+	mgScope := "/providers/Microsoft.Management/managementGroups/mg-warn"
+	mock := &searchMock{
+		eligibleRoles: []azure.Role{searchMGRole(mgScope, "Reader")},
+		mgSubs: map[string][]azure.Subscription{
+			"mg-warn": {{ID: "sub-w", DisplayName: "Warn Sub"}},
+		},
+		mgWarnings: map[string][]string{
+			"mg-warn": {"skip MG child-inaccessible: 403"},
+		},
+	}
+	var stdout, stderr bytes.Buffer
+	a := &app.App{Config: app.Config{Command: app.CmdSearch, Output: app.OutputTable}}
+	if err := runSearchWithErr(t.Context(), a, mock, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stdout.String(), "warning") {
+		t.Errorf("warning appeared on stdout: %s", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "warning") {
+		t.Errorf("expected warning on stderr, got: %s", stderr.String())
 	}
 }

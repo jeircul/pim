@@ -51,6 +51,9 @@ type Config struct {
 
 	// SearchQuery is the optional filter passed to pim search.
 	SearchQuery string
+
+	// MGFilter limits pim search to a specific management group (exact name or substring).
+	MGFilter string
 }
 
 // Parse parses os.Args[1:] into a Config.
@@ -85,6 +88,7 @@ func Parse(args []string) (Config, error) {
 			cfg.SearchQuery = args[0]
 			args = args[1:]
 		}
+		// --mg is parsed below via the shared FlagSet
 	case "version", "v":
 		cfg.Version = true
 		return cfg, nil
@@ -110,6 +114,7 @@ func Parse(args []string) (Config, error) {
 	fs.StringVar(&outStr, "output", "table", "output format: table | json")
 	fs.StringVar(&outStr, "o", "table", "output format (shorthand)")
 	fs.StringVar(&cfg.ConfigDir, "config-dir", "", "override config directory")
+	fs.StringVar(&cfg.MGFilter, "mg", "", "limit search to a specific management group (exact name or substring)")
 
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
@@ -164,7 +169,7 @@ Usage:
   pim activate [flags]         activate roles (TUI, flags pre-fill wizard)
   pim deactivate               deactivate roles (TUI)
   pim status                   view active/eligible roles (TUI)
-  pim search [query]           list PIM-eligible subscriptions; optional query filters by name or GUID (exact-first, substring-fallback); use --output json for machine-readable output
+  pim search [query]           list PIM-eligible subscriptions; optional query filters by name or GUID (exact-first, substring-fallback); use --output json for machine-readable output; use --mg to limit to a management group
   pim completion <bash|zsh|fish>  print shell completion script
   pim version                  print version
 

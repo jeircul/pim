@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 )
 
 // ListManagementGroupChildren returns the direct eligible children of a management group.
@@ -47,38 +48,67 @@ func classifyChildResources(resources []childResource) ([]ManagementGroup, []Sub
 }
 
 // ListAllSubscriptionsUnderMG returns all subscriptions reachable under a
-// management group by recursively expanding child management groups.
-// Uses the same eligibleChildResources API as the TUI scope tree.
-func (c *Client) ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) ([]Subscription, error) {
-	var out []Subscription
-	visited := map[string]struct{}{}
-	if err := c.walkMG(ctx, mgID, &out, visited, 0); err != nil {
-		return nil, err
+// management group by recursively expanding child management groups in parallel.
+// Inaccessible intermediate nodes are skipped; their paths are returned as
+// warnings so callers can surface them without aborting.
+func (c *Client) ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) (subs []Subscription, warnings []string, err error) {
+	if _, err = c.armToken(ctx); err != nil {
+		return nil, nil, fmt.Errorf("acquire ARM token: %w", err)
 	}
-	return out, nil
-}
 
-func (c *Client) walkMG(ctx context.Context, mgID string, out *[]Subscription, visited map[string]struct{}, depth int) error {
-	if _, seen := visited[strings.ToLower(mgID)]; seen {
-		return nil
-	}
-	visited[strings.ToLower(mgID)] = struct{}{}
+	var (
+		mu      sync.Mutex
+		wg      sync.WaitGroup
+		sem     = make(chan struct{}, 4)
+		visited = map[string]struct{}{}
+	)
 
-	mgs, subs, err := c.ListManagementGroupChildren(ctx, mgID)
-	if err != nil {
-		if depth > 0 {
-			// inaccessible intermediate node — skip subtree, not fatal
-			return nil
+	var walk func(id string, depth int)
+	walk = func(id string, depth int) {
+		defer wg.Done()
+		sem <- struct{}{}
+		defer func() { <-sem }()
+
+		mu.Lock()
+		key := strings.ToLower(id)
+		if _, seen := visited[key]; seen {
+			mu.Unlock()
+			return
 		}
-		return fmt.Errorf("list children of management group %s: %w", mgID, err)
-	}
-	*out = append(*out, subs...)
-	for _, child := range mgs {
-		if err := c.walkMG(ctx, child.ID, out, visited, depth+1); err != nil {
-			return err
+		visited[key] = struct{}{}
+		mu.Unlock()
+
+		mgs, ss, e := c.ListManagementGroupChildren(ctx, id)
+		if e != nil {
+			if depth > 0 {
+				mu.Lock()
+				warnings = append(warnings, fmt.Sprintf("skip MG %s: %v", id, e))
+				mu.Unlock()
+				return
+			}
+			mu.Lock()
+			if err == nil {
+				err = fmt.Errorf("list children of management group %s: %w", id, e)
+			}
+			mu.Unlock()
+			return
+		}
+
+		mu.Lock()
+		subs = append(subs, ss...)
+		mu.Unlock()
+
+		for _, child := range mgs {
+			wg.Add(1)
+			go walk(child.ID, depth+1)
 		}
 	}
-	return nil
+
+	wg.Add(1)
+	go walk(mgID, 0)
+	wg.Wait()
+
+	return subs, warnings, err
 }
 
 // fetchEligibleChildResources fetches PIM-eligible child resources under any

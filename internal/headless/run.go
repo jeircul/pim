@@ -20,7 +20,7 @@ type ClientAPI interface {
 	GetEligibleRoles(ctx context.Context) ([]azure.Role, error)
 	ActivateRole(ctx context.Context, role azure.Role, principalID, justification string, minutes int, targetScope string) (*azure.ScheduleResponse, error)
 	DeactivateRole(ctx context.Context, assignment azure.ActiveAssignment, principalID string) (*azure.ScheduleResponse, error)
-	ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) ([]azure.Subscription, error)
+	ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) ([]azure.Subscription, []string, error)
 }
 
 var _ ClientAPI = (*azure.Client)(nil)
@@ -42,7 +42,7 @@ func Run(ctx context.Context, a *app.App) error {
 	case app.CmdActivate:
 		return runActivate(ctx, a, client, user, os.Stdout)
 	case app.CmdSearch:
-		return runSearch(ctx, a, client, os.Stdout)
+		return runSearchWithErr(ctx, a, client, os.Stdout, os.Stderr)
 	default:
 		return runStatus(ctx, a, client, user, os.Stdout)
 	}
@@ -221,9 +221,12 @@ func filterRoles(ctx context.Context, client ClientAPI, roles []azure.Role, role
 				}
 				mgID := azure.ManagementGroupIDFromScope(roles[i].Scope)
 				if _, cached := mgCache[mgID]; !cached {
-					list, err := client.ListAllSubscriptionsUnderMG(ctx, mgID)
+					list, warnings, err := client.ListAllSubscriptionsUnderMG(ctx, mgID)
 					if err != nil {
 						return nil, fmt.Errorf("list subscriptions under management group %s: %w", mgID, err)
+					}
+					for _, w := range warnings {
+						fmt.Fprintf(os.Stderr, "warning: %s\n", w)
 					}
 					set := make(map[string]struct{}, len(list))
 					for _, s := range list {
