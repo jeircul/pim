@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 )
 
 // ListManagementGroupChildren returns the direct eligible children of a management group.
@@ -48,67 +47,83 @@ func classifyChildResources(resources []childResource) ([]ManagementGroup, []Sub
 }
 
 // ListAllSubscriptionsUnderMG returns all subscriptions reachable under a
-// management group by recursively expanding child management groups in parallel.
+// management group by recursively expanding child management groups.
+// The ARM token is acquired once and reused for all requests.
 // Inaccessible intermediate nodes are skipped; their paths are returned as
 // warnings so callers can surface them without aborting.
 func (c *Client) ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) (subs []Subscription, warnings []string, err error) {
-	if _, err = c.armToken(ctx); err != nil {
+	token, err := c.armToken(ctx)
+	if err != nil {
 		return nil, nil, fmt.Errorf("acquire ARM token: %w", err)
 	}
 
-	var (
-		mu      sync.Mutex
-		wg      sync.WaitGroup
-		sem     = make(chan struct{}, 1)
-		visited = map[string]struct{}{}
-	)
+	visited := map[string]struct{}{}
+	queue := []string{mgID}
 
-	var walk func(id string, depth int)
-	walk = func(id string, depth int) {
-		defer wg.Done()
-		sem <- struct{}{}
-		defer func() { <-sem }()
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
 
-		mu.Lock()
 		key := strings.ToLower(id)
 		if _, seen := visited[key]; seen {
-			mu.Unlock()
-			return
+			continue
 		}
 		visited[key] = struct{}{}
-		mu.Unlock()
 
-		mgs, ss, e := c.ListManagementGroupChildren(ctx, id)
+		mgs, ss, e := c.listManagementGroupChildrenWithToken(ctx, id, token)
 		if e != nil {
-			if depth > 0 {
-				mu.Lock()
-				warnings = append(warnings, fmt.Sprintf("skip MG %s: %v", id, e))
-				mu.Unlock()
-				return
+			if id == mgID {
+				return nil, nil, fmt.Errorf("list children of management group %s: %w", id, e)
 			}
-			mu.Lock()
-			if err == nil {
-				err = fmt.Errorf("list children of management group %s: %w", id, e)
-			}
-			mu.Unlock()
-			return
+			warnings = append(warnings, fmt.Sprintf("skip MG %s: %v", id, e))
+			continue
 		}
-
-		mu.Lock()
 		subs = append(subs, ss...)
-		mu.Unlock()
-
 		for _, child := range mgs {
-			wg.Add(1)
-			go walk(child.ID, depth+1)
+			queue = append(queue, child.ID)
 		}
 	}
 
-	wg.Add(1)
-	go walk(mgID, 0)
-	wg.Wait()
+	return subs, warnings, nil
+}
 
-	return subs, warnings, err
+func (c *Client) listManagementGroupChildrenWithToken(ctx context.Context, mgID, token string) ([]ManagementGroup, []Subscription, error) {
+	mgID = strings.TrimSpace(mgID)
+	if mgID == "" {
+		return nil, nil, fmt.Errorf("management group id cannot be empty")
+	}
+	scope := fmt.Sprintf("/providers/Microsoft.Management/managementGroups/%s", url.PathEscape(mgID))
+	resources, err := c.fetchEligibleChildResourcesWithToken(ctx, scope, token)
+	if err != nil {
+		return nil, nil, err
+	}
+	mgs, subs := classifyChildResources(resources)
+	return mgs, subs, nil
+}
+
+func (c *Client) fetchEligibleChildResourcesWithToken(ctx context.Context, scope, token string) ([]childResource, error) {
+	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/eligibleChildResources?api-version=%s&$getAllChildren=true",
+		armEndpoint, scope, eligibleChildResourcesAPIVersion)
+
+	var out []childResource
+	for reqURL != "" {
+		resp, err := c.doRequest(ctx, http.MethodGet, reqURL, token, nil)
+		if err != nil {
+			return nil, fmt.Errorf("eligible child resources for %s: %w", scope, err)
+		}
+		var result struct {
+			Value    []childResource `json:"value"`
+			NextLink string          `json:"nextLink"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("decode child resources: %w", err)
+		}
+		resp.Body.Close()
+		out = append(out, result.Value...)
+		reqURL = result.NextLink
+	}
+	return out, nil
 }
 
 // fetchEligibleChildResources fetches PIM-eligible child resources under any
