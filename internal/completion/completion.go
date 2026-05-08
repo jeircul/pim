@@ -12,11 +12,12 @@ func Bash(w io.Writer) {
     local cur prev words cword
     _init_completion || return
 
-    local commands="activate deactivate status completion version help"
+    local commands="activate deactivate status search completion version help"
     local common_flags="--role -r --scope --time -t --justification -j --yes -y --headless --output -o --config-dir"
     local activate_flags="$common_flags"
     local deactivate_flags="--role -r --scope --headless --output -o --config-dir"
     local status_flags="--role -r --scope --headless --output -o --config-dir"
+    local search_flags="--output -o --config-dir --mg"
 
     case "$prev" in
         --output|-o)
@@ -50,6 +51,8 @@ func Bash(w io.Writer) {
                 COMPREPLY=( $(compgen -W "$deactivate_flags" -- "$cur") ) ;;
             status)
                 COMPREPLY=( $(compgen -W "$status_flags" -- "$cur") ) ;;
+            search)
+                COMPREPLY=( $(compgen -W "$search_flags" -- "$cur") ) ;;
             version|help)
                 COMPREPLY=( $(compgen -W "--config-dir" -- "$cur") ) ;;
             *)
@@ -83,6 +86,7 @@ _pim() {
                 'activate:activate roles via TUI wizard'
                 'deactivate:deactivate active role elevations'
                 'status:view active and eligible roles'
+                'search:list PIM-eligible subscriptions'
                 'completion:print shell completion script'
                 'version:print version'
                 'help:show help'
@@ -126,6 +130,13 @@ _pim() {
                         '-o[output format]:format:(table json)' \
                         '--config-dir[override config directory]:dir:_directories'
                     ;;
+                search)
+                    _arguments \
+                        '--output[output format]:format:(table json)' \
+                        '-o[output format]:format:(table json)' \
+                        '--mg[limit to management group]:mg name' \
+                        '--config-dir[override config directory]:dir:_directories'
+                    ;;
                 completion)
                     _values 'shell' bash zsh fish
                     ;;
@@ -146,7 +157,7 @@ compdef _pim pim
 func Fish(w io.Writer) {
 	fmt.Fprint(w, `# pim fish completions
 
-set -l commands activate deactivate status completion version help
+set -l commands activate deactivate status search completion version help
 
 complete -c pim -f -n "not __fish_seen_subcommand_from $commands" \
     -a activate   -d "activate roles via TUI wizard"
@@ -154,6 +165,8 @@ complete -c pim -f -n "not __fish_seen_subcommand_from $commands" \
     -a deactivate -d "deactivate active role elevations"
 complete -c pim -f -n "not __fish_seen_subcommand_from $commands" \
     -a status     -d "view active and eligible roles"
+complete -c pim -f -n "not __fish_seen_subcommand_from $commands" \
+    -a search     -d "list PIM-eligible subscriptions"
 complete -c pim -f -n "not __fish_seen_subcommand_from $commands" \
     -a completion -d "print shell completion script"
 complete -c pim -f -n "not __fish_seen_subcommand_from $commands" \
@@ -207,6 +220,15 @@ complete -c pim -n "__fish_seen_subcommand_from status" \
     -l output -s o   -d "output format" \
     -a "table json"
 complete -c pim -n "__fish_seen_subcommand_from status" \
+    -l config-dir    -d "override config directory"
+
+# search flags
+complete -c pim -n "__fish_seen_subcommand_from search" \
+    -l output -s o   -d "output format" \
+    -a "table json"
+complete -c pim -n "__fish_seen_subcommand_from search" \
+    -l mg            -d "limit to management group (exact name or substring)"
+complete -c pim -n "__fish_seen_subcommand_from search" \
     -l config-dir    -d "override config directory"
 
 # version/help flags

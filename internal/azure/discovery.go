@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 )
 
 // ListManagementGroupChildren returns the direct eligible children of a management group.
@@ -46,13 +48,120 @@ func classifyChildResources(resources []childResource) ([]ManagementGroup, []Sub
 	return mgs, subs
 }
 
-// ListManagementGroupSubscriptions returns subscriptions under a management group
-// that the caller is PIM-eligible to activate. Uses the eligibleChildResources API
-// with getAllChildren=true so nested subscriptions are included. An empty result
-// means no eligible child scopes exist, which is valid and not an error.
-func (c *Client) ListManagementGroupSubscriptions(ctx context.Context, mgID string) ([]Subscription, error) {
-	_, subs, err := c.ListManagementGroupChildren(ctx, mgID)
-	return subs, err
+// ListAllSubscriptionsUnderMG returns all subscriptions reachable under a
+// management group by recursively expanding child management groups.
+// The ARM token is acquired once and reused for all requests.
+// Sibling nodes are expanded concurrently (bounded to 8 workers) so a stalled
+// node does not delay its siblings. Inaccessible intermediate nodes are
+// skipped; their paths are returned as warnings so callers can surface them
+// without aborting.
+// parents maps lowercased subscription ID to the MG that directly contained it
+// during the BFS walk.
+func (c *Client) ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) (subs []Subscription, parents map[string]string, warnings []string, err error) {
+	token, err := c.armToken(ctx)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("acquire ARM token: %w", err)
+	}
+
+	const workers = 8
+	sem := make(chan struct{}, workers)
+
+	parents = map[string]string{}
+
+	var (
+		mu      sync.Mutex
+		wg      sync.WaitGroup
+		visited = map[string]struct{}{}
+	)
+
+	var enqueue func(id string, depth int)
+	enqueue = func(id string, depth int) {
+		key := strings.ToLower(id)
+		if _, seen := visited[key]; seen {
+			return
+		}
+		visited[key] = struct{}{}
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			nodeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+			mgs, ss, e := c.listManagementGroupChildrenWithToken(nodeCtx, id, token)
+			cancel()
+
+			mu.Lock()
+			defer mu.Unlock()
+			if e != nil {
+				if depth == 0 {
+					if err == nil {
+						err = fmt.Errorf("list children of management group %s: %w", id, e)
+					}
+					return
+				}
+				warnings = append(warnings, fmt.Sprintf("skip MG %s: %v", id, e))
+				return
+			}
+			subs = append(subs, ss...)
+			for _, s := range ss {
+				k := strings.ToLower(s.ID)
+				if _, exists := parents[k]; !exists {
+					parents[k] = id
+				}
+			}
+			for _, child := range mgs {
+				enqueue(child.ID, depth+1)
+			}
+		}()
+	}
+
+	mu.Lock()
+	enqueue(mgID, 0)
+	mu.Unlock()
+
+	wg.Wait()
+	return subs, parents, warnings, err
+}
+
+func (c *Client) listManagementGroupChildrenWithToken(ctx context.Context, mgID, token string) ([]ManagementGroup, []Subscription, error) {
+	mgID = strings.TrimSpace(mgID)
+	if mgID == "" {
+		return nil, nil, fmt.Errorf("management group id cannot be empty")
+	}
+	scope := fmt.Sprintf("/providers/Microsoft.Management/managementGroups/%s", url.PathEscape(mgID))
+	resources, err := c.fetchEligibleChildResourcesWithToken(ctx, scope, token)
+	if err != nil {
+		return nil, nil, err
+	}
+	mgs, subs := classifyChildResources(resources)
+	return mgs, subs, nil
+}
+
+func (c *Client) fetchEligibleChildResourcesWithToken(ctx context.Context, scope, token string) ([]childResource, error) {
+	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/eligibleChildResources?api-version=%s&$getAllChildren=true",
+		armEndpoint, scope, eligibleChildResourcesAPIVersion)
+
+	var out []childResource
+	for reqURL != "" {
+		resp, err := c.doRequest(ctx, http.MethodGet, reqURL, token, nil)
+		if err != nil {
+			return nil, fmt.Errorf("eligible child resources for %s: %w", scope, err)
+		}
+		var result struct {
+			Value    []childResource `json:"value"`
+			NextLink string          `json:"nextLink"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("decode child resources: %w", err)
+		}
+		resp.Body.Close()
+		out = append(out, result.Value...)
+		reqURL = result.NextLink
+	}
+	return out, nil
 }
 
 // fetchEligibleChildResources fetches PIM-eligible child resources under any

@@ -122,3 +122,48 @@ func TestCanAutoAdvance(t *testing.T) {
 		t.Error("partial config should not CanAutoAdvance")
 	}
 }
+
+func TestParse_search(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantQuery  string
+		wantMG     string
+		wantOutput OutputFormat
+	}{
+		{"bare", []string{"search"}, "", "", OutputTable},
+		{"query only", []string{"search", "alpha"}, "alpha", "", OutputTable},
+		{"mg only", []string{"search", "--mg", "example-mg"}, "", "example-mg", OutputTable},
+		{"mg then query", []string{"search", "--mg", "example-mg", "alpha"}, "alpha", "example-mg", OutputTable},
+		{"query then mg", []string{"search", "alpha", "--mg", "example-mg"}, "alpha", "example-mg", OutputTable},
+		{"query then output", []string{"search", "alpha", "--output", "json"}, "alpha", "", OutputJSON},
+		{"output then query", []string{"search", "--output", "json", "alpha"}, "alpha", "", OutputJSON},
+		{"all three", []string{"search", "--mg", "example-mg", "alpha", "--output", "json"}, "alpha", "example-mg", OutputJSON},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Parse(tc.args)
+			if err != nil {
+				t.Fatalf("Parse(%v) err: %v", tc.args, err)
+			}
+			if cfg.Command != CmdSearch {
+				t.Errorf("Command = %q, want %q", cfg.Command, CmdSearch)
+			}
+			if cfg.SearchQuery != tc.wantQuery {
+				t.Errorf("SearchQuery = %q, want %q", cfg.SearchQuery, tc.wantQuery)
+			}
+			if cfg.MGFilter != tc.wantMG {
+				t.Errorf("MGFilter = %q, want %q", cfg.MGFilter, tc.wantMG)
+			}
+			if cfg.Output != tc.wantOutput {
+				t.Errorf("Output = %v, want %v", cfg.Output, tc.wantOutput)
+			}
+		})
+	}
+}
+
+func TestParse_search_extraPositional(t *testing.T) {
+	if _, err := Parse([]string{"search", "alpha", "extra"}); err == nil {
+		t.Error("expected error for extra positional, got nil")
+	}
+}
