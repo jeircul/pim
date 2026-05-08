@@ -84,11 +84,6 @@ func Parse(args []string) (Config, error) {
 	case CmdSearch:
 		cfg.Command = CmdSearch
 		args = args[1:]
-		if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-			cfg.SearchQuery = args[0]
-			args = args[1:]
-		}
-		// --mg is parsed below via the shared FlagSet
 	case "version", "v":
 		cfg.Version = true
 		return cfg, nil
@@ -116,8 +111,23 @@ func Parse(args []string) (Config, error) {
 	fs.StringVar(&cfg.ConfigDir, "config-dir", "", "override config directory")
 	fs.StringVar(&cfg.MGFilter, "mg", "", "limit search to a specific management group (exact name or substring)")
 
-	if err := fs.Parse(args); err != nil {
-		return cfg, err
+	remaining := args
+	for {
+		if err := fs.Parse(remaining); err != nil {
+			return cfg, err
+		}
+		rest := fs.Args()
+		if len(rest) == 0 {
+			break
+		}
+		if cfg.Command != CmdSearch {
+			return cfg, fmt.Errorf("unexpected argument: %q", rest[0])
+		}
+		if cfg.SearchQuery != "" {
+			return cfg, fmt.Errorf("unexpected extra argument: %q", rest[0])
+		}
+		cfg.SearchQuery = rest[0]
+		remaining = rest[1:]
 	}
 
 	cfg.Roles = []string(roles)

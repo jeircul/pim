@@ -125,29 +125,45 @@ func TestCanAutoAdvance(t *testing.T) {
 
 func TestParse_search(t *testing.T) {
 	tests := []struct {
+		name       string
 		args       []string
-		wantCmd    string
 		wantQuery  string
+		wantMG     string
 		wantOutput OutputFormat
 	}{
-		{[]string{"search"}, CmdSearch, "", OutputTable},
-		{[]string{"search", "q901"}, CmdSearch, "q901", OutputTable},
-		{[]string{"search", "q901", "--output", "json"}, CmdSearch, "q901", OutputJSON},
+		{"bare", []string{"search"}, "", "", OutputTable},
+		{"query only", []string{"search", "q901"}, "q901", "", OutputTable},
+		{"mg only", []string{"search", "--mg", "Omnia"}, "", "Omnia", OutputTable},
+		{"mg then query", []string{"search", "--mg", "Omnia", "q901"}, "q901", "Omnia", OutputTable},
+		{"query then mg", []string{"search", "q901", "--mg", "Omnia"}, "q901", "Omnia", OutputTable},
+		{"query then output", []string{"search", "q901", "--output", "json"}, "q901", "", OutputJSON},
+		{"output then query", []string{"search", "--output", "json", "q901"}, "q901", "", OutputJSON},
+		{"all three", []string{"search", "--mg", "Omnia", "q901", "--output", "json"}, "q901", "Omnia", OutputJSON},
 	}
 	for _, tc := range tests {
-		cfg, err := Parse(tc.args)
-		if err != nil {
-			t.Errorf("Parse(%v) unexpected err: %v", tc.args, err)
-			continue
-		}
-		if cfg.Command != tc.wantCmd {
-			t.Errorf("Parse(%v) Command = %q, want %q", tc.args, cfg.Command, tc.wantCmd)
-		}
-		if cfg.SearchQuery != tc.wantQuery {
-			t.Errorf("Parse(%v) SearchQuery = %q, want %q", tc.args, cfg.SearchQuery, tc.wantQuery)
-		}
-		if cfg.Output != tc.wantOutput {
-			t.Errorf("Parse(%v) Output = %v, want %v", tc.args, cfg.Output, tc.wantOutput)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Parse(tc.args)
+			if err != nil {
+				t.Fatalf("Parse(%v) err: %v", tc.args, err)
+			}
+			if cfg.Command != CmdSearch {
+				t.Errorf("Command = %q, want %q", cfg.Command, CmdSearch)
+			}
+			if cfg.SearchQuery != tc.wantQuery {
+				t.Errorf("SearchQuery = %q, want %q", cfg.SearchQuery, tc.wantQuery)
+			}
+			if cfg.MGFilter != tc.wantMG {
+				t.Errorf("MGFilter = %q, want %q", cfg.MGFilter, tc.wantMG)
+			}
+			if cfg.Output != tc.wantOutput {
+				t.Errorf("Output = %v, want %v", cfg.Output, tc.wantOutput)
+			}
+		})
+	}
+}
+
+func TestParse_search_extraPositional(t *testing.T) {
+	if _, err := Parse([]string{"search", "q901", "extra"}); err == nil {
+		t.Error("expected error for extra positional, got nil")
 	}
 }
