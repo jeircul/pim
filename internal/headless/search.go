@@ -64,23 +64,15 @@ func runSearchWithErr(ctx context.Context, a *app.App, client ClientAPI, out io.
 
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "SUBSCRIPTION\tGUID\tMANAGEMENT GROUP\tELIGIBLE ROLES")
-	anyMissing := false
 	for _, h := range hits {
 		mg := h.ManagementGroup
 		if mg == "" {
-			mg = "—"
-			anyMissing = true
+			mg = "(direct)"
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
 			h.DisplayName, h.SubscriptionID, mg, strings.Join(h.EligibleRoles, ","))
 	}
-	if err := tw.Flush(); err != nil {
-		return err
-	}
-	if anyMissing {
-		fmt.Fprintln(out, "— direct subscription-scoped role; parent management group not resolved")
-	}
-	return nil
+	return tw.Flush()
 }
 
 // buildSearchHits walks all eligible roles and flattens them into a deduplicated

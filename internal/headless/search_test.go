@@ -134,7 +134,7 @@ func TestRunSearchDirectSubRole(t *testing.T) {
 	}
 }
 
-func TestRunSearchDirectSubRoleEmDash(t *testing.T) {
+func TestRunSearchDirectSubRoleDirect(t *testing.T) {
 	mock := &searchMock{
 		eligibleRoles: []azure.Role{
 			subRole("/subscriptions/bbbb-2222", "Sub Beta", "Contributor"),
@@ -145,8 +145,8 @@ func TestRunSearchDirectSubRoleEmDash(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "—") {
-		t.Errorf("expected em dash for empty ManagementGroup in table output, got: %s", out)
+	if !strings.Contains(out, "(direct)") {
+		t.Errorf("expected (direct) for empty ManagementGroup in table output, got: %s", out)
 	}
 }
 
@@ -765,7 +765,7 @@ func (m *perMGCallMock) ListAllSubscriptionsUnderMG(_ context.Context, mgID stri
 	return m.subs[mgID], parents, nil, nil
 }
 
-func TestRunSearchLegendAppearsWhenDirectSubRole(t *testing.T) {
+func TestRunSearchDirectSubRoleShowsDirect(t *testing.T) {
 	mock := &searchMock{
 		eligibleRoles: []azure.Role{
 			subRole("/subscriptions/sub-direct", "Direct Sub", "Reader"),
@@ -775,28 +775,28 @@ func TestRunSearchLegendAppearsWhenDirectSubRole(t *testing.T) {
 	if err := runSearch(t.Context(), makeApp("", app.OutputTable), mock, &buf); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), "— direct subscription-scoped role") {
-		t.Errorf("expected legend in output, got: %s", buf.String())
+	if !strings.Contains(buf.String(), "(direct)") {
+		t.Errorf("expected (direct) in MG column, got: %s", buf.String())
 	}
 }
 
-func TestRunSearchLegendAbsentWhenAllMGRoles(t *testing.T) {
-	mgScope := "/providers/Microsoft.Management/managementGroups/mg-legend"
+func TestRunSearchMGRoleNoDirectLabel(t *testing.T) {
+	mgScope := "/providers/Microsoft.Management/managementGroups/mg-label"
 	mock := &searchMock{
 		eligibleRoles: []azure.Role{searchMGRole(mgScope, "Reader")},
 		mgSubs: map[string][]azure.Subscription{
-			"mg-legend": {{ID: "sub-mg", DisplayName: "MG Sub"}},
+			"mg-label": {{ID: "sub-mg", DisplayName: "MG Sub"}},
 		},
 		mgParents: map[string]map[string]string{
-			"mg-legend": {"sub-mg": "mg-legend"},
+			"mg-label": {"sub-mg": "mg-label"},
 		},
 	}
 	var buf bytes.Buffer
 	if err := runSearch(t.Context(), makeApp("", app.OutputTable), mock, &buf); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(buf.String(), "— direct subscription-scoped role") {
-		t.Errorf("unexpected legend in output, got: %s", buf.String())
+	if strings.Contains(buf.String(), "(direct)") {
+		t.Errorf("unexpected (direct) label for MG-scoped role, got: %s", buf.String())
 	}
 }
 
