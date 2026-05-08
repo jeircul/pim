@@ -109,7 +109,7 @@ func Parse(args []string) (Config, error) {
 	fs.StringVar(&outStr, "output", "table", "output format: table | json")
 	fs.StringVar(&outStr, "o", "table", "output format (shorthand)")
 	fs.StringVar(&cfg.ConfigDir, "config-dir", "", "override config directory")
-	fs.StringVar(&cfg.MGFilter, "mg", "", "limit search to a specific management group (exact name or substring)")
+	fs.StringVar(&cfg.MGFilter, "mg", "", "filter by management group (matches eligibility scope or physical parent)")
 
 	remaining := args
 	for {

@@ -27,6 +27,7 @@ type mockClient struct {
 	mgSubsErr     error
 	mgSubsCalls   int
 	mgWarnings    map[string][]string
+	mgParents     map[string]map[string]string
 }
 
 func (m *mockClient) GetCurrentUser(_ context.Context) (*azure.User, error) {
@@ -55,16 +56,20 @@ func (m *mockClient) DeactivateRole(_ context.Context, assignment azure.ActiveAs
 	return &azure.ScheduleResponse{}, nil
 }
 
-func (m *mockClient) ListAllSubscriptionsUnderMG(_ context.Context, mgID string) ([]azure.Subscription, []string, error) {
+func (m *mockClient) ListAllSubscriptionsUnderMG(_ context.Context, mgID string) ([]azure.Subscription, map[string]string, []string, error) {
 	m.mgSubsCalls++
 	if m.mgSubsErr != nil {
-		return nil, nil, m.mgSubsErr
+		return nil, nil, nil, m.mgSubsErr
 	}
 	var warnings []string
 	if m.mgWarnings != nil {
 		warnings = m.mgWarnings[mgID]
 	}
-	return m.mgSubs[mgID], warnings, nil
+	var parents map[string]string
+	if m.mgParents != nil {
+		parents = m.mgParents[mgID]
+	}
+	return m.mgSubs[mgID], parents, warnings, nil
 }
 
 func newTestApp(t *testing.T, cfg app.Config) *app.App {

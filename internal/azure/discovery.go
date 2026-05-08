@@ -55,14 +55,18 @@ func classifyChildResources(resources []childResource) ([]ManagementGroup, []Sub
 // node does not delay its siblings. Inaccessible intermediate nodes are
 // skipped; their paths are returned as warnings so callers can surface them
 // without aborting.
-func (c *Client) ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) (subs []Subscription, warnings []string, err error) {
+// parents maps lowercased subscription ID to the MG that directly contained it
+// during the BFS walk.
+func (c *Client) ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) (subs []Subscription, parents map[string]string, warnings []string, err error) {
 	token, err := c.armToken(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("acquire ARM token: %w", err)
+		return nil, nil, nil, fmt.Errorf("acquire ARM token: %w", err)
 	}
 
 	const workers = 8
 	sem := make(chan struct{}, workers)
+
+	parents = map[string]string{}
 
 	var (
 		mu      sync.Mutex
@@ -101,6 +105,12 @@ func (c *Client) ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) (
 				return
 			}
 			subs = append(subs, ss...)
+			for _, s := range ss {
+				k := strings.ToLower(s.ID)
+				if _, exists := parents[k]; !exists {
+					parents[k] = id
+				}
+			}
 			for _, child := range mgs {
 				enqueue(child.ID, depth+1)
 			}
@@ -112,7 +122,7 @@ func (c *Client) ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) (
 	mu.Unlock()
 
 	wg.Wait()
-	return subs, warnings, err
+	return subs, parents, warnings, err
 }
 
 func (c *Client) listManagementGroupChildrenWithToken(ctx context.Context, mgID, token string) ([]ManagementGroup, []Subscription, error) {

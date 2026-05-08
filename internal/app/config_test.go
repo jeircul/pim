@@ -132,13 +132,13 @@ func TestParse_search(t *testing.T) {
 		wantOutput OutputFormat
 	}{
 		{"bare", []string{"search"}, "", "", OutputTable},
-		{"query only", []string{"search", "q901"}, "q901", "", OutputTable},
-		{"mg only", []string{"search", "--mg", "Omnia"}, "", "Omnia", OutputTable},
-		{"mg then query", []string{"search", "--mg", "Omnia", "q901"}, "q901", "Omnia", OutputTable},
-		{"query then mg", []string{"search", "q901", "--mg", "Omnia"}, "q901", "Omnia", OutputTable},
-		{"query then output", []string{"search", "q901", "--output", "json"}, "q901", "", OutputJSON},
-		{"output then query", []string{"search", "--output", "json", "q901"}, "q901", "", OutputJSON},
-		{"all three", []string{"search", "--mg", "Omnia", "q901", "--output", "json"}, "q901", "Omnia", OutputJSON},
+		{"query only", []string{"search", "alpha"}, "alpha", "", OutputTable},
+		{"mg only", []string{"search", "--mg", "example-mg"}, "", "example-mg", OutputTable},
+		{"mg then query", []string{"search", "--mg", "example-mg", "alpha"}, "alpha", "example-mg", OutputTable},
+		{"query then mg", []string{"search", "alpha", "--mg", "example-mg"}, "alpha", "example-mg", OutputTable},
+		{"query then output", []string{"search", "alpha", "--output", "json"}, "alpha", "", OutputJSON},
+		{"output then query", []string{"search", "--output", "json", "alpha"}, "alpha", "", OutputJSON},
+		{"all three", []string{"search", "--mg", "example-mg", "alpha", "--output", "json"}, "alpha", "example-mg", OutputJSON},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -163,7 +163,7 @@ func TestParse_search(t *testing.T) {
 }
 
 func TestParse_search_extraPositional(t *testing.T) {
-	if _, err := Parse([]string{"search", "q901", "extra"}); err == nil {
+	if _, err := Parse([]string{"search", "alpha", "extra"}); err == nil {
 		t.Error("expected error for extra positional, got nil")
 	}
 }
