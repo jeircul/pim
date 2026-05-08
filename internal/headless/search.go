@@ -34,7 +34,7 @@ func runSearchWithErr(ctx context.Context, a *app.App, client ClientAPI, out io.
 
 	subToMG := map[string]string{}
 
-	hits, err := buildSearchHits(ctx, client, roles, subToMG, errOut)
+	hits, err := buildSearchHits(ctx, client, roles, subToMG, a.Config.MGFilter, errOut)
 	if err != nil {
 		return err
 	}
@@ -82,7 +82,7 @@ func runSearchWithErr(ctx context.Context, a *app.App, client ClientAPI, out io.
 // expansion (including errors) are written to errOut; a failing MG is skipped
 // rather than aborting the entire search. subToMG provides physical parent MG
 // for direct-subscription-scoped roles.
-func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role, subToMG map[string]string, errOut io.Writer) ([]SearchHit, error) {
+func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role, subToMG map[string]string, mgFilter string, errOut io.Writer) ([]SearchHit, error) {
 	type acc struct {
 		id      string
 		display string
@@ -117,6 +117,14 @@ func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role, 
 			add(azure.SubscriptionIDFromScope(r.Scope), r.ScopeDisplay, "", r.RoleName)
 		case azure.ScopeManagementGroup:
 			mgID := azure.ManagementGroupIDFromScope(r.Scope)
+			if mgFilter != "" {
+				f := strings.ToLower(mgFilter)
+				idL := strings.ToLower(mgID)
+				if !strings.Contains(idL, f) && !strings.Contains(f, idL) {
+					mgCache[mgID] = nil
+					continue
+				}
+			}
 			subs, ok := mgCache[mgID]
 			if !ok {
 				list, parents, warnings, err := client.ListAllSubscriptionsUnderMG(ctx, mgID)

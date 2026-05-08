@@ -734,3 +734,82 @@ func TestRunSearchMGFilterNoMatch(t *testing.T) {
 		t.Errorf("unexpected old message in output: %s", out)
 	}
 }
+
+// perMGCallMock records which MG IDs were passed to ListAllSubscriptionsUnderMG.
+type perMGCallMock struct {
+	subs  map[string][]azure.Subscription
+	calls map[string]int
+}
+
+func (m *perMGCallMock) GetCurrentUser(_ context.Context) (*azure.User, error) {
+	return &azure.User{}, nil
+}
+func (m *perMGCallMock) GetActiveAssignments(_ context.Context) ([]azure.ActiveAssignment, error) {
+	return nil, nil
+}
+func (m *perMGCallMock) GetEligibleRoles(_ context.Context) ([]azure.Role, error) {
+	return nil, nil
+}
+func (m *perMGCallMock) ActivateRole(_ context.Context, _ azure.Role, _, _ string, _ int, _ string) (*azure.ScheduleResponse, error) {
+	return nil, nil
+}
+func (m *perMGCallMock) DeactivateRole(_ context.Context, _ azure.ActiveAssignment, _ string) (*azure.ScheduleResponse, error) {
+	return nil, nil
+}
+func (m *perMGCallMock) ListAllSubscriptionsUnderMG(_ context.Context, mgID string) ([]azure.Subscription, map[string]string, []string, error) {
+	m.calls[mgID]++
+	parents := map[string]string{}
+	for _, s := range m.subs[mgID] {
+		parents[strings.ToLower(s.ID)] = mgID
+	}
+	return m.subs[mgID], parents, nil, nil
+}
+
+func TestBuildSearchHitsMGFilterSkipsUnrelatedMG(t *testing.T) {
+	scopeA := "/providers/Microsoft.Management/managementGroups/example-mg-a"
+	scopeB := "/providers/Microsoft.Management/managementGroups/example-mg-b"
+
+	mock := &perMGCallMock{
+		subs: map[string][]azure.Subscription{
+			"example-mg-a": {{ID: "sub-a", DisplayName: "Sub A"}},
+			"example-mg-b": {{ID: "sub-b", DisplayName: "Sub B"}},
+		},
+		calls: map[string]int{},
+	}
+
+	roles := []azure.Role{
+		searchMGRole(scopeA, "Reader"),
+		searchMGRole(scopeB, "Reader"),
+	}
+
+	hits, err := buildSearchHits(t.Context(), mock, roles, map[string]string{}, "example-mg-b", noopWriter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if mock.calls["example-mg-a"] != 0 {
+		t.Errorf("ListAllSubscriptionsUnderMG called for example-mg-a %d times, want 0", mock.calls["example-mg-a"])
+	}
+	if mock.calls["example-mg-b"] != 1 {
+		t.Errorf("ListAllSubscriptionsUnderMG called for example-mg-b %d times, want 1", mock.calls["example-mg-b"])
+	}
+
+	var subIDs []string
+	for _, h := range hits {
+		subIDs = append(subIDs, h.SubscriptionID)
+	}
+	for _, id := range subIDs {
+		if id == "sub-a" {
+			t.Errorf("sub-a should not appear in hits (example-mg-a was skipped)")
+		}
+	}
+	found := false
+	for _, id := range subIDs {
+		if id == "sub-b" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("sub-b not found in hits: %v", subIDs)
+	}
+}
