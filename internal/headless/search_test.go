@@ -765,6 +765,41 @@ func (m *perMGCallMock) ListAllSubscriptionsUnderMG(_ context.Context, mgID stri
 	return m.subs[mgID], parents, nil, nil
 }
 
+func TestRunSearchLegendAppearsWhenDirectSubRole(t *testing.T) {
+	mock := &searchMock{
+		eligibleRoles: []azure.Role{
+			subRole("/subscriptions/sub-direct", "Direct Sub", "Reader"),
+		},
+	}
+	var buf bytes.Buffer
+	if err := runSearch(t.Context(), makeApp("", app.OutputTable), mock, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "— direct subscription-scoped role") {
+		t.Errorf("expected legend in output, got: %s", buf.String())
+	}
+}
+
+func TestRunSearchLegendAbsentWhenAllMGRoles(t *testing.T) {
+	mgScope := "/providers/Microsoft.Management/managementGroups/mg-legend"
+	mock := &searchMock{
+		eligibleRoles: []azure.Role{searchMGRole(mgScope, "Reader")},
+		mgSubs: map[string][]azure.Subscription{
+			"mg-legend": {{ID: "sub-mg", DisplayName: "MG Sub"}},
+		},
+		mgParents: map[string]map[string]string{
+			"mg-legend": {"sub-mg": "mg-legend"},
+		},
+	}
+	var buf bytes.Buffer
+	if err := runSearch(t.Context(), makeApp("", app.OutputTable), mock, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "— direct subscription-scoped role") {
+		t.Errorf("unexpected legend in output, got: %s", buf.String())
+	}
+}
+
 func TestBuildSearchHitsMGFilterSkipsUnrelatedMG(t *testing.T) {
 	scopeA := "/providers/Microsoft.Management/managementGroups/example-mg-a"
 	scopeB := "/providers/Microsoft.Management/managementGroups/example-mg-b"
