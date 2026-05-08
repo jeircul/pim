@@ -32,39 +32,7 @@ func runSearchWithErr(ctx context.Context, a *app.App, client ClientAPI, out io.
 		return fmt.Errorf("get eligible roles: %w", err)
 	}
 
-	// subToMG maps lowercased subscription ID to the MG that directly contains it.
 	subToMG := map[string]string{}
-	// subsUnderFilter is the set of sub IDs under the --mg filter (when set).
-	var subsUnderFilter map[string]struct{}
-
-	if a.Config.MGFilter != "" {
-		mgIDs, ok := resolveMGFilter(roles, a.Config.MGFilter)
-		if !ok {
-			fmt.Fprintf(out, "no eligible roles under management group %q\n", a.Config.MGFilter)
-			return nil
-		}
-		subsUnderFilter = make(map[string]struct{})
-		for _, mgID := range mgIDs {
-			subs, parents, warnings, err := client.ListAllSubscriptionsUnderMG(ctx, mgID)
-			if err != nil {
-				return fmt.Errorf("list subscriptions under management group %s: %w", mgID, err)
-			}
-			for _, w := range warnings {
-				fmt.Fprintf(errOut, "warning: %s\n", w)
-			}
-			for _, s := range subs {
-				subsUnderFilter[strings.ToLower(s.ID)] = struct{}{}
-			}
-			for k, v := range parents {
-				subToMG[k] = v
-			}
-		}
-		roles = filterRolesByMG(roles, mgIDs, subsUnderFilter)
-		if len(roles) == 0 {
-			fmt.Fprintf(out, "no eligible roles under management group %q\n", a.Config.MGFilter)
-			return nil
-		}
-	}
 
 	hits, err := buildSearchHits(ctx, client, roles, subToMG, errOut)
 	if err != nil {
@@ -73,6 +41,7 @@ func runSearchWithErr(ctx context.Context, a *app.App, client ClientAPI, out io.
 
 	q := strings.TrimSpace(a.Config.SearchQuery)
 	hits = filterSearchHits(hits, q)
+	hits = filterHitsByMG(hits, a.Config.MGFilter)
 
 	sort.Slice(hits, func(i, j int) bool {
 		if hits[i].DisplayName != hits[j].DisplayName {
@@ -104,42 +73,6 @@ func runSearchWithErr(ctx context.Context, a *app.App, client ClientAPI, out io.
 			h.DisplayName, h.SubscriptionID, mg, strings.Join(h.EligibleRoles, ","))
 	}
 	return tw.Flush()
-}
-
-// resolveMGFilter returns the management group ARM IDs that best match filter
-// using exact-first, substring-fallback on ARM ID and display name.
-// Exact match returns a single-element slice. Substring match returns all matches (deduped).
-// Returns (nil, false) when no MG-scoped role matches.
-func resolveMGFilter(roles []azure.Role, filter string) (mgIDs []string, ok bool) {
-	f := strings.ToLower(filter)
-	var exactID string
-	seen := map[string]struct{}{}
-	var subIDs []string
-	for _, r := range roles {
-		if r.ScopeKind() != azure.ScopeManagementGroup {
-			continue
-		}
-		id := azure.ManagementGroupIDFromScope(r.Scope)
-		idL := strings.ToLower(id)
-		dnL := strings.ToLower(r.ScopeDisplay)
-		if idL == f || dnL == f {
-			exactID = id
-			continue
-		}
-		if exactID == "" && (strings.Contains(idL, f) || strings.Contains(dnL, f)) {
-			if _, dup := seen[idL]; !dup {
-				seen[idL] = struct{}{}
-				subIDs = append(subIDs, id)
-			}
-		}
-	}
-	if exactID != "" {
-		return []string{exactID}, true
-	}
-	if len(subIDs) > 0 {
-		return subIDs, true
-	}
-	return nil, false
 }
 
 // buildSearchHits walks all eligible roles and flattens them into a deduplicated
@@ -204,7 +137,11 @@ func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role, 
 				mgCache[mgID] = subs
 			}
 			for _, s := range subs {
-				add(s.ID, s.DisplayName, mgID, r.RoleName)
+				parent := subToMG[strings.ToLower(s.ID)]
+				if parent == "" {
+					parent = mgID
+				}
+				add(s.ID, s.DisplayName, parent, r.RoleName)
 			}
 		}
 	}
@@ -250,28 +187,31 @@ func filterSearchHits(hits []SearchHit, query string) []SearchHit {
 	return sub
 }
 
-// filterRolesByMG keeps roles whose eligibility scope matches any of mgIDs,
-// or whose subscription physically lives under any of those MGs (via subsUnderFilter).
-func filterRolesByMG(roles []azure.Role, mgIDs []string, subsUnderFilter map[string]struct{}) []azure.Role {
-	mgSet := make(map[string]struct{}, len(mgIDs))
-	for _, id := range mgIDs {
-		mgSet[strings.ToLower(id)] = struct{}{}
+// filterHitsByMG applies exact-first / substring-fallback on ManagementGroup.
+// Empty filter returns all hits unchanged. Hits with empty ManagementGroup
+// never match a non-empty filter.
+func filterHitsByMG(hits []SearchHit, filter string) []SearchHit {
+	if filter == "" {
+		return hits
 	}
-	var out []azure.Role
-	for _, r := range roles {
-		switch r.ScopeKind() {
-		case azure.ScopeManagementGroup:
-			if _, ok := mgSet[strings.ToLower(azure.ManagementGroupIDFromScope(r.Scope))]; ok {
-				out = append(out, r)
-			}
-		case azure.ScopeSubscription:
-			key := strings.ToLower(azure.SubscriptionIDFromScope(r.Scope))
-			if _, ok := subsUnderFilter[key]; ok {
-				out = append(out, r)
-			}
+	f := strings.ToLower(filter)
+	var exact, sub []SearchHit
+	for _, h := range hits {
+		mg := strings.ToLower(h.ManagementGroup)
+		if mg == "" {
+			continue
+		}
+		switch {
+		case mg == f:
+			exact = append(exact, h)
+		case strings.Contains(mg, f):
+			sub = append(sub, h)
 		}
 	}
-	return out
+	if len(exact) > 0 {
+		return exact
+	}
+	return sub
 }
 
 // noopWriter discards all writes.

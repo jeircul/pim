@@ -456,39 +456,6 @@ func TestRunSearchJSONPreservesGUIDCase(t *testing.T) {
 	}
 }
 
-func TestFilterRolesByMGExact(t *testing.T) {
-	roles := []azure.Role{
-		{Scope: "/providers/Microsoft.Management/managementGroups/example-mg", ScopeDisplay: "example-mg", RoleName: "Owner"},
-		{Scope: "/providers/Microsoft.Management/managementGroups/Other", ScopeDisplay: "Other", RoleName: "Reader"},
-	}
-	got := filterRolesByMG(roles, []string{"example-mg"}, nil)
-	if len(got) != 1 || got[0].ScopeDisplay != "example-mg" {
-		t.Errorf("filterRolesByMG exact: got %+v", got)
-	}
-}
-
-func TestFilterRolesByMGSubstring(t *testing.T) {
-	roles := []azure.Role{
-		{Scope: "/providers/Microsoft.Management/managementGroups/example-mg-prod", ScopeDisplay: "example-mg-prod", RoleName: "Owner"},
-		{Scope: "/providers/Microsoft.Management/managementGroups/other", ScopeDisplay: "Other", RoleName: "Reader"},
-	}
-	// resolveMGFilter finds "example-mg-prod" via substring; filterRolesByMG uses exact mgID match.
-	got := filterRolesByMG(roles, []string{"example-mg-prod"}, nil)
-	if len(got) != 1 || got[0].ScopeDisplay != "example-mg-prod" {
-		t.Errorf("filterRolesByMG substring: got %+v", got)
-	}
-}
-
-func TestFilterRolesByMGNoMatch(t *testing.T) {
-	roles := []azure.Role{
-		{Scope: "/providers/Microsoft.Management/managementGroups/alpha", ScopeDisplay: "Alpha", RoleName: "Owner"},
-	}
-	got := filterRolesByMG(roles, []string{"zzz"}, nil)
-	if len(got) != 0 {
-		t.Errorf("filterRolesByMG no match: expected empty, got %+v", got)
-	}
-}
-
 func makeAppMG(mgFilter string) *app.App {
 	cfg := app.Config{
 		Command:  app.CmdSearch,
@@ -509,6 +476,10 @@ func TestRunSearchMGFilter(t *testing.T) {
 		mgSubs: map[string][]azure.Subscription{
 			"example-mg": {{ID: "sub-example", DisplayName: "example-sub"}},
 			"Other":      {{ID: "sub-other", DisplayName: "Other Sub"}},
+		},
+		mgParents: map[string]map[string]string{
+			"example-mg": {"sub-example": "example-mg"},
+			"Other":      {"sub-other": "Other"},
 		},
 	}
 	var buf bytes.Buffer
@@ -549,8 +520,6 @@ func TestRunSearchWarningsSentToStderr(t *testing.T) {
 }
 
 func TestRunSearchDirectSubGetsMGFromParents(t *testing.T) {
-	// MG-scoped role walks mg-a and finds sub-1; direct-sub role for sub-2
-	// whose physical parent mg-a is injected via mgParents.
 	mgScope := "/providers/Microsoft.Management/managementGroups/mg-a"
 	mock := &searchMock{
 		eligibleRoles: []azure.Role{
@@ -587,8 +556,6 @@ func TestRunSearchDirectSubGetsMGFromParents(t *testing.T) {
 }
 
 func TestRunSearchDirectSubMGBlankWhenNoWalk(t *testing.T) {
-	// Only direct-sub roles, no MG-scoped roles, no --mg filter.
-	// ManagementGroup must be empty (no BFS walk to populate subToMG).
 	mock := &searchMock{
 		eligibleRoles: []azure.Role{
 			subRole("/subscriptions/sub-only", "Only Sub", "Reader"),
@@ -611,7 +578,6 @@ func TestRunSearchDirectSubMGBlankWhenNoWalk(t *testing.T) {
 }
 
 func TestRunSearchMGFilterIncludesDirectSub(t *testing.T) {
-	// --mg mg-a filter; one direct-sub role for sub-1 which is in subsUnderFilter.
 	mgScope := "/providers/Microsoft.Management/managementGroups/mg-a"
 	mock := &searchMock{
 		eligibleRoles: []azure.Role{
@@ -621,6 +587,9 @@ func TestRunSearchMGFilterIncludesDirectSub(t *testing.T) {
 		mgSubs: map[string][]azure.Subscription{
 			"mg-a": {{ID: "sub-1", DisplayName: "Sub One"}},
 		},
+		mgParents: map[string]map[string]string{
+			"mg-a": {"sub-1": "mg-a"},
+		},
 	}
 	var buf bytes.Buffer
 	if err := runSearch(t.Context(), makeAppMG("mg-a"), mock, &buf); err != nil {
@@ -629,27 +598,6 @@ func TestRunSearchMGFilterIncludesDirectSub(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "Sub One") {
 		t.Errorf("expected Sub One in output, got: %s", out)
-	}
-}
-
-func TestFilterRolesByMGMultiple(t *testing.T) {
-	roles := []azure.Role{
-		{Scope: "/providers/Microsoft.Management/managementGroups/example-mg-a", RoleName: "Owner"},
-		{Scope: "/providers/Microsoft.Management/managementGroups/example-mg-b", RoleName: "Reader"},
-		{Scope: "/providers/Microsoft.Management/managementGroups/unrelated", RoleName: "Contributor"},
-	}
-	got := filterRolesByMG(roles, []string{"example-mg-a", "example-mg-b"}, nil)
-	if len(got) != 2 {
-		t.Fatalf("expected 2 roles, got %d: %+v", len(got), got)
-	}
-	ids := map[string]struct{}{}
-	for _, r := range got {
-		ids[azure.ManagementGroupIDFromScope(r.Scope)] = struct{}{}
-	}
-	for _, want := range []string{"example-mg-a", "example-mg-b"} {
-		if _, ok := ids[want]; !ok {
-			t.Errorf("expected mgID %q in result", want)
-		}
 	}
 }
 
@@ -665,6 +613,10 @@ func TestRunSearchMGFilterUnion(t *testing.T) {
 			"example-mg-a": {{ID: "sub-a", DisplayName: "Sub A"}},
 			"example-mg-b": {{ID: "sub-b", DisplayName: "Sub B"}},
 		},
+		mgParents: map[string]map[string]string{
+			"example-mg-a": {"sub-a": "example-mg-a"},
+			"example-mg-b": {"sub-b": "example-mg-b"},
+		},
 	}
 	var buf bytes.Buffer
 	if err := runSearch(t.Context(), makeAppMG("example-mg"), mock, &buf); err != nil {
@@ -676,5 +628,109 @@ func TestRunSearchMGFilterUnion(t *testing.T) {
 	}
 	if !strings.Contains(out, "Sub B") {
 		t.Errorf("expected Sub B in output, got: %s", out)
+	}
+}
+
+func TestBuildSearchHitsMGColumnUsesDirectParent(t *testing.T) {
+	mgScope := "/providers/Microsoft.Management/managementGroups/parent-mg"
+	mock := &searchMock{
+		eligibleRoles: []azure.Role{searchMGRole(mgScope, "Reader")},
+		mgSubs: map[string][]azure.Subscription{
+			"parent-mg": {{ID: "sub-1", DisplayName: "Sub One"}},
+		},
+		mgParents: map[string]map[string]string{
+			"parent-mg": {"sub-1": "child-mg-a"},
+		},
+	}
+	var buf bytes.Buffer
+	if err := runSearch(t.Context(), makeApp("", app.OutputJSON), mock, &buf); err != nil {
+		t.Fatal(err)
+	}
+	var hits []SearchHit
+	if err := json.Unmarshal(buf.Bytes(), &hits); err != nil {
+		t.Fatalf("unmarshal: %v\noutput: %s", err, buf.String())
+	}
+	if len(hits) != 1 {
+		t.Fatalf("expected 1 hit, got %d", len(hits))
+	}
+	if hits[0].ManagementGroup != "child-mg-a" {
+		t.Errorf("ManagementGroup = %q, want child-mg-a", hits[0].ManagementGroup)
+	}
+}
+
+func TestFilterHitsByMGEmptyFilter(t *testing.T) {
+	hits := []SearchHit{
+		{SubscriptionID: "sub-1", ManagementGroup: "prod"},
+		{SubscriptionID: "sub-2", ManagementGroup: ""},
+	}
+	got := filterHitsByMG(hits, "")
+	if len(got) != 2 {
+		t.Errorf("expected 2 hits, got %d", len(got))
+	}
+}
+
+func TestFilterHitsByMGExact(t *testing.T) {
+	hits := []SearchHit{
+		{SubscriptionID: "sub-1", ManagementGroup: "prod"},
+		{SubscriptionID: "sub-2", ManagementGroup: "prod-extra"},
+	}
+	got := filterHitsByMG(hits, "prod")
+	if len(got) != 1 || got[0].ManagementGroup != "prod" {
+		t.Errorf("expected exactly {MG:prod}, got %+v", got)
+	}
+}
+
+func TestFilterHitsByMGSubstring(t *testing.T) {
+	hits := []SearchHit{
+		{SubscriptionID: "sub-1", ManagementGroup: "child-mg-a"},
+		{SubscriptionID: "sub-2", ManagementGroup: "other"},
+	}
+	got := filterHitsByMG(hits, "child-mg")
+	if len(got) != 1 || got[0].ManagementGroup != "child-mg-a" {
+		t.Errorf("expected exactly {MG:child-mg-a}, got %+v", got)
+	}
+}
+
+func TestFilterHitsByMGNoMatch(t *testing.T) {
+	hits := []SearchHit{
+		{SubscriptionID: "sub-1", ManagementGroup: "prod"},
+	}
+	got := filterHitsByMG(hits, "zzz")
+	if len(got) != 0 {
+		t.Errorf("expected empty, got %+v", got)
+	}
+}
+
+func TestFilterHitsByMGEmptyMGSkipped(t *testing.T) {
+	hits := []SearchHit{
+		{SubscriptionID: "sub-1", ManagementGroup: ""},
+	}
+	got := filterHitsByMG(hits, "prod")
+	if len(got) != 0 {
+		t.Errorf("expected empty (empty MG skipped), got %+v", got)
+	}
+}
+
+func TestRunSearchMGFilterNoMatch(t *testing.T) {
+	mgScope := "/providers/Microsoft.Management/managementGroups/example-mg"
+	mock := &searchMock{
+		eligibleRoles: []azure.Role{searchMGRole(mgScope, "Reader")},
+		mgSubs: map[string][]azure.Subscription{
+			"example-mg": {{ID: "sub-1", DisplayName: "Sub One"}},
+		},
+		mgParents: map[string]map[string]string{
+			"example-mg": {"sub-1": "example-mg"},
+		},
+	}
+	var buf bytes.Buffer
+	if err := runSearch(t.Context(), makeAppMG("nonexistent-mg"), mock, &buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "no matching eligible subscriptions") {
+		t.Errorf("expected no-match message, got: %s", out)
+	}
+	if strings.Contains(out, "no eligible roles under management group") {
+		t.Errorf("unexpected old message in output: %s", out)
 	}
 }
