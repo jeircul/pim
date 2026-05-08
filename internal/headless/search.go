@@ -146,8 +146,9 @@ func resolveMGFilter(roles []azure.Role, filter string) (mgIDs []string, ok bool
 // list of activatable subscriptions. MG-scoped roles are expanded via
 // ListAllSubscriptionsUnderMG (cached per MG). RG-scoped roles are excluded.
 // Roles for the same subscription are merged into one hit. Warnings from MG
-// expansion are written to errOut. subToMG provides physical parent MG for
-// direct-subscription-scoped roles.
+// expansion (including errors) are written to errOut; a failing MG is skipped
+// rather than aborting the entire search. subToMG provides physical parent MG
+// for direct-subscription-scoped roles.
 func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role, subToMG map[string]string, errOut io.Writer) ([]SearchHit, error) {
 	type acc struct {
 		id      string
@@ -186,11 +187,13 @@ func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role, 
 			subs, ok := mgCache[mgID]
 			if !ok {
 				list, parents, warnings, err := client.ListAllSubscriptionsUnderMG(ctx, mgID)
-				if err != nil {
-					return nil, fmt.Errorf("list subscriptions under management group %s: %w", mgID, err)
-				}
 				for _, w := range warnings {
 					fmt.Fprintf(errOut, "warning: %s\n", w)
+				}
+				if err != nil {
+					fmt.Fprintf(errOut, "warning: list subscriptions under management group %s: %s\n", mgID, err)
+					mgCache[mgID] = nil
+					continue
 				}
 				for k, v := range parents {
 					if _, exists := subToMG[k]; !exists {

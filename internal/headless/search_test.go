@@ -53,6 +53,34 @@ func (m *searchMock) ListAllSubscriptionsUnderMG(_ context.Context, mgID string)
 	return m.mgSubs[mgID], parents, warnings, nil
 }
 
+// perMGErrorMock wraps searchMock and returns per-MG errors from ListAllSubscriptionsUnderMG.
+type perMGErrorMock struct {
+	base   *searchMock
+	errMGs map[string]error
+}
+
+func (m *perMGErrorMock) GetCurrentUser(ctx context.Context) (*azure.User, error) {
+	return m.base.GetCurrentUser(ctx)
+}
+func (m *perMGErrorMock) GetActiveAssignments(ctx context.Context) ([]azure.ActiveAssignment, error) {
+	return m.base.GetActiveAssignments(ctx)
+}
+func (m *perMGErrorMock) GetEligibleRoles(ctx context.Context) ([]azure.Role, error) {
+	return m.base.GetEligibleRoles(ctx)
+}
+func (m *perMGErrorMock) ActivateRole(ctx context.Context, r azure.Role, a, b string, d int, j string) (*azure.ScheduleResponse, error) {
+	return m.base.ActivateRole(ctx, r, a, b, d, j)
+}
+func (m *perMGErrorMock) DeactivateRole(ctx context.Context, a azure.ActiveAssignment, s string) (*azure.ScheduleResponse, error) {
+	return m.base.DeactivateRole(ctx, a, s)
+}
+func (m *perMGErrorMock) ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) ([]azure.Subscription, map[string]string, []string, error) {
+	if err, ok := m.errMGs[mgID]; ok {
+		return nil, nil, nil, err
+	}
+	return m.base.ListAllSubscriptionsUnderMG(ctx, mgID)
+}
+
 func makeApp(query string, output app.OutputFormat) *app.App {
 	cfg := app.Config{
 		Command:     app.CmdSearch,
@@ -342,13 +370,55 @@ func TestRunSearchMGClientErrorWraps(t *testing.T) {
 		eligibleRoles: []azure.Role{searchMGRole(mgScope, "Reader")},
 		mgSubsErr:     errors.New("upstream failure"),
 	}
-	var buf bytes.Buffer
-	err := runSearch(t.Context(), makeApp("", app.OutputTable), mock, &buf)
-	if err == nil {
-		t.Fatal("expected error, got nil")
+	var stdout, stderr bytes.Buffer
+	a := &app.App{Config: app.Config{Command: app.CmdSearch, Output: app.OutputTable}}
+	if err := runSearchWithErr(t.Context(), a, mock, &stdout, &stderr); err != nil {
+		t.Fatalf("expected no error, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "list subscriptions under management group") {
-		t.Errorf("error = %q, want to contain 'list subscriptions under management group'", err.Error())
+	if !strings.Contains(stderr.String(), "list subscriptions under management group") {
+		t.Errorf("expected warning on stderr, got: %s", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "upstream failure") {
+		t.Errorf("expected upstream failure in stderr, got: %s", stderr.String())
+	}
+}
+
+func TestBuildSearchHitsMGExpansionError(t *testing.T) {
+	errScope := "/providers/Microsoft.Management/managementGroups/example-mg-err"
+	okScope := "/providers/Microsoft.Management/managementGroups/example-mg-ok"
+
+	callCount := 0
+	mock := &searchMock{
+		eligibleRoles: []azure.Role{
+			searchMGRole(errScope, "Reader"),
+			searchMGRole(okScope, "Contributor"),
+		},
+		mgSubs: map[string][]azure.Subscription{
+			"example-mg-ok": {{ID: "sub-ok", DisplayName: "Sub OK"}},
+		},
+	}
+	origListFn := mock.ListAllSubscriptionsUnderMG
+	_ = origListFn
+	_ = callCount
+
+	errMock := &perMGErrorMock{
+		base:   mock,
+		errMGs: map[string]error{"example-mg-err": errors.New("timeout expanding MG")},
+	}
+
+	var stdout, stderr bytes.Buffer
+	a := &app.App{Config: app.Config{Command: app.CmdSearch, Output: app.OutputTable}}
+	if err := runSearchWithErr(t.Context(), a, errMock, &stdout, &stderr); err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "example-mg-err") {
+		t.Errorf("expected example-mg-err in stderr warning, got: %s", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "timeout expanding MG") {
+		t.Errorf("expected error text in stderr, got: %s", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "sub-ok") && !strings.Contains(stdout.String(), "Sub OK") {
+		t.Errorf("expected sub-ok results in stdout, got: %s", stdout.String())
 	}
 }
 
