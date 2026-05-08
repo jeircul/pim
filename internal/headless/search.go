@@ -38,26 +38,28 @@ func runSearchWithErr(ctx context.Context, a *app.App, client ClientAPI, out io.
 	var subsUnderFilter map[string]struct{}
 
 	if a.Config.MGFilter != "" {
-		mgID, ok := resolveMGFilter(roles, a.Config.MGFilter)
+		mgIDs, ok := resolveMGFilter(roles, a.Config.MGFilter)
 		if !ok {
 			fmt.Fprintf(out, "no eligible roles under management group %q\n", a.Config.MGFilter)
 			return nil
 		}
-		subs, parents, warnings, err := client.ListAllSubscriptionsUnderMG(ctx, mgID)
-		if err != nil {
-			return fmt.Errorf("list subscriptions under management group %s: %w", mgID, err)
+		subsUnderFilter = make(map[string]struct{})
+		for _, mgID := range mgIDs {
+			subs, parents, warnings, err := client.ListAllSubscriptionsUnderMG(ctx, mgID)
+			if err != nil {
+				return fmt.Errorf("list subscriptions under management group %s: %w", mgID, err)
+			}
+			for _, w := range warnings {
+				fmt.Fprintf(errOut, "warning: %s\n", w)
+			}
+			for _, s := range subs {
+				subsUnderFilter[strings.ToLower(s.ID)] = struct{}{}
+			}
+			for k, v := range parents {
+				subToMG[k] = v
+			}
 		}
-		for _, w := range warnings {
-			fmt.Fprintf(errOut, "warning: %s\n", w)
-		}
-		subsUnderFilter = make(map[string]struct{}, len(subs))
-		for _, s := range subs {
-			subsUnderFilter[strings.ToLower(s.ID)] = struct{}{}
-		}
-		for k, v := range parents {
-			subToMG[k] = v
-		}
-		roles = filterRolesByMG(roles, mgID, subsUnderFilter)
+		roles = filterRolesByMG(roles, mgIDs, subsUnderFilter)
 		if len(roles) == 0 {
 			fmt.Fprintf(out, "no eligible roles under management group %q\n", a.Config.MGFilter)
 			return nil
@@ -94,18 +96,25 @@ func runSearchWithErr(ctx context.Context, a *app.App, client ClientAPI, out io.
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "SUBSCRIPTION\tGUID\tMANAGEMENT GROUP\tELIGIBLE ROLES")
 	for _, h := range hits {
+		mg := h.ManagementGroup
+		if mg == "" {
+			mg = "—"
+		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-			h.DisplayName, h.SubscriptionID, h.ManagementGroup, strings.Join(h.EligibleRoles, ","))
+			h.DisplayName, h.SubscriptionID, mg, strings.Join(h.EligibleRoles, ","))
 	}
 	return tw.Flush()
 }
 
-// resolveMGFilter returns the management group ARM ID that best matches filter
+// resolveMGFilter returns the management group ARM IDs that best match filter
 // using exact-first, substring-fallback on ARM ID and display name.
-// Returns ("", false) when no MG-scoped role matches.
-func resolveMGFilter(roles []azure.Role, filter string) (mgID string, ok bool) {
+// Exact match returns a single-element slice. Substring match returns all matches (deduped).
+// Returns (nil, false) when no MG-scoped role matches.
+func resolveMGFilter(roles []azure.Role, filter string) (mgIDs []string, ok bool) {
 	f := strings.ToLower(filter)
-	var exactID, subID string
+	var exactID string
+	seen := map[string]struct{}{}
+	var subIDs []string
 	for _, r := range roles {
 		if r.ScopeKind() != azure.ScopeManagementGroup {
 			continue
@@ -113,20 +122,24 @@ func resolveMGFilter(roles []azure.Role, filter string) (mgID string, ok bool) {
 		id := azure.ManagementGroupIDFromScope(r.Scope)
 		idL := strings.ToLower(id)
 		dnL := strings.ToLower(r.ScopeDisplay)
-		switch {
-		case idL == f || dnL == f:
+		if idL == f || dnL == f {
 			exactID = id
-		case exactID == "" && (strings.Contains(idL, f) || strings.Contains(dnL, f)):
-			subID = id
+			continue
+		}
+		if exactID == "" && (strings.Contains(idL, f) || strings.Contains(dnL, f)) {
+			if _, dup := seen[idL]; !dup {
+				seen[idL] = struct{}{}
+				subIDs = append(subIDs, id)
+			}
 		}
 	}
 	if exactID != "" {
-		return exactID, true
+		return []string{exactID}, true
 	}
-	if subID != "" {
-		return subID, true
+	if len(subIDs) > 0 {
+		return subIDs, true
 	}
-	return "", false
+	return nil, false
 }
 
 // buildSearchHits walks all eligible roles and flattens them into a deduplicated
@@ -234,14 +247,18 @@ func filterSearchHits(hits []SearchHit, query string) []SearchHit {
 	return sub
 }
 
-// filterRolesByMG keeps roles whose eligibility scope matches mgID exactly,
-// or whose subscription physically lives under mgID (via subsUnderFilter).
-func filterRolesByMG(roles []azure.Role, mgID string, subsUnderFilter map[string]struct{}) []azure.Role {
+// filterRolesByMG keeps roles whose eligibility scope matches any of mgIDs,
+// or whose subscription physically lives under any of those MGs (via subsUnderFilter).
+func filterRolesByMG(roles []azure.Role, mgIDs []string, subsUnderFilter map[string]struct{}) []azure.Role {
+	mgSet := make(map[string]struct{}, len(mgIDs))
+	for _, id := range mgIDs {
+		mgSet[strings.ToLower(id)] = struct{}{}
+	}
 	var out []azure.Role
 	for _, r := range roles {
 		switch r.ScopeKind() {
 		case azure.ScopeManagementGroup:
-			if strings.EqualFold(azure.ManagementGroupIDFromScope(r.Scope), mgID) {
+			if _, ok := mgSet[strings.ToLower(azure.ManagementGroupIDFromScope(r.Scope))]; ok {
 				out = append(out, r)
 			}
 		case azure.ScopeSubscription:

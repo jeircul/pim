@@ -20,7 +20,7 @@ const (
 	eligibleChildResourcesAPIVersion = "2020-10-01"
 	armEndpoint                      = "https://management.azure.com"
 	graphEndpoint                    = "https://graph.microsoft.com/v1.0"
-	httpTimeout                      = 30 * time.Second
+	httpTimeout                      = 90 * time.Second
 )
 
 // Client handles Azure PIM operations.
