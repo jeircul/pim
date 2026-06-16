@@ -18,6 +18,10 @@ import (
 // request is already in flight for the same role and scope.
 const errCodePendingRequest = "PendingRoleAssignmentRequest"
 
+// errCodeAssignmentExists is the Azure PIM error code returned when the role
+// is already active at the target scope.
+const errCodeAssignmentExists = "RoleAssignmentExists"
+
 // ActivateRole submits an activation or extension request.
 func (c *Client) ActivateRole(ctx context.Context, role Role, principalID, justification string, minutes int, targetScope string) (*ScheduleResponse, error) {
 	tok, err := c.armToken(ctx)
@@ -69,7 +73,8 @@ func (c *Client) ActivateRole(ctx context.Context, role Role, principalID, justi
 	resp, err := c.doRequest(ctx, http.MethodPut, reqURL, tok, bytes.NewReader(body))
 	if err != nil {
 		var apiErr *APIError
-		if errors.As(err, &apiErr) && apiErr.StatusCode == 400 && strings.EqualFold(apiErr.Code, errCodePendingRequest) {
+		if errors.As(err, &apiErr) && apiErr.StatusCode == 400 &&
+			(strings.EqualFold(apiErr.Code, errCodePendingRequest) || strings.EqualFold(apiErr.Code, errCodeAssignmentExists)) {
 			return &ScheduleResponse{}, nil
 		}
 		if IsResourceGroupScope(scopePath) && errors.As(err, &apiErr) &&
@@ -110,7 +115,8 @@ func (c *Client) activateAtSubscriptionScope(ctx context.Context, req ScheduleRe
 	resp, err := c.doRequest(ctx, http.MethodPut, reqURL, tok, bytes.NewReader(body))
 	if err != nil {
 		var apiErr *APIError
-		if errors.As(err, &apiErr) && apiErr.StatusCode == 400 && strings.EqualFold(apiErr.Code, errCodePendingRequest) {
+		if errors.As(err, &apiErr) && apiErr.StatusCode == 400 &&
+			(strings.EqualFold(apiErr.Code, errCodePendingRequest) || strings.EqualFold(apiErr.Code, errCodeAssignmentExists)) {
 			return &ScheduleResponse{}, nil
 		}
 		return nil, fmt.Errorf("submit activation at %s (and fallback to subscription %s): %w", rgScope, subScope, errors.Join(rgErr, err))

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -20,7 +21,11 @@ func (c *Client) ListManagementGroupChildren(ctx context.Context, mgID string) (
 	}
 
 	scope := fmt.Sprintf("/providers/Microsoft.Management/managementGroups/%s", url.PathEscape(mgID))
-	resources, err := c.fetchEligibleChildResources(ctx, scope)
+	tok, err := c.armToken(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	resources, err := c.fetchEligibleChildResourcesWithToken(ctx, scope, tok)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -48,6 +53,19 @@ func classifyChildResources(resources []childResource) ([]ManagementGroup, []Sub
 	return mgs, subs
 }
 
+// mgNodeTimeoutDefault bounds each management-group node lookup so one stalled
+// node does not delay its siblings. Override with PIM_MG_NODE_TIMEOUT (e.g. "45s").
+const mgNodeTimeoutDefault = 30 * time.Second
+
+func mgNodeTimeout() time.Duration {
+	if v := os.Getenv("PIM_MG_NODE_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
+	}
+	return mgNodeTimeoutDefault
+}
+
 // ListAllSubscriptionsUnderMG returns all subscriptions reachable under a
 // management group by recursively expanding child management groups.
 // The ARM token is acquired once and reused for all requests.
@@ -65,6 +83,7 @@ func (c *Client) ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) (
 
 	const workers = 8
 	sem := make(chan struct{}, workers)
+	nodeTO := mgNodeTimeout()
 
 	parents = map[string]string{}
 
@@ -88,7 +107,7 @@ func (c *Client) ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) (
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			nodeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+			nodeCtx, cancel := context.WithTimeout(ctx, nodeTO)
 			mgs, ss, e := c.listManagementGroupChildrenWithToken(nodeCtx, id, token)
 			cancel()
 
@@ -164,39 +183,6 @@ func (c *Client) fetchEligibleChildResourcesWithToken(ctx context.Context, scope
 	return out, nil
 }
 
-// fetchEligibleChildResources fetches PIM-eligible child resources under any
-// ARM scope (management group or subscription). scope must be the full ARM
-// scope path, e.g. "/providers/Microsoft.Management/managementGroups/{id}"
-// or "/subscriptions/{id}".
-func (c *Client) fetchEligibleChildResources(ctx context.Context, scope string) ([]childResource, error) {
-	tok, err := c.armToken(ctx)
-	if err != nil {
-		return nil, err
-	}
-	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/eligibleChildResources?api-version=%s&$getAllChildren=true",
-		armEndpoint, scope, eligibleChildResourcesAPIVersion)
-
-	var out []childResource
-	for reqURL != "" {
-		resp, err := c.doRequest(ctx, http.MethodGet, reqURL, tok, nil)
-		if err != nil {
-			return nil, fmt.Errorf("eligible child resources for %s: %w", scope, err)
-		}
-		var result struct {
-			Value    []childResource `json:"value"`
-			NextLink string          `json:"nextLink"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			resp.Body.Close()
-			return nil, fmt.Errorf("decode child resources: %w", err)
-		}
-		resp.Body.Close()
-		out = append(out, result.Value...)
-		reqURL = result.NextLink
-	}
-	return out, nil
-}
-
 // ListEligibleResourceGroups lists resource groups the caller is eligible to
 // manage via PIM under the given subscription. Uses the PIM
 // eligibleChildResources API so it works before any RBAC is granted.
@@ -205,7 +191,11 @@ func (c *Client) ListEligibleResourceGroups(ctx context.Context, subscriptionID 
 		return nil, fmt.Errorf("subscription id cannot be empty")
 	}
 	scope := "/subscriptions/" + subscriptionID
-	resources, err := c.fetchEligibleChildResources(ctx, scope)
+	tok, err := c.armToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	resources, err := c.fetchEligibleChildResourcesWithToken(ctx, scope, tok)
 	if err != nil {
 		return nil, err
 	}

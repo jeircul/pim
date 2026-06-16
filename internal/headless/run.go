@@ -197,7 +197,16 @@ func filterRoles(ctx context.Context, client ClientAPI, roles []azure.Role, role
 	}
 
 	mgCache := map[string]map[string]struct{}{}
+	seen := map[string]struct{}{}
 	var out []roleTarget
+	add := func(t roleTarget) {
+		key := strings.ToLower(t.role.RoleDefinitionID) + "|" + strings.ToLower(azure.NormalizeScope(t.scope))
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		out = append(out, t)
+	}
 	for _, sf := range scopeFilters {
 		expanded, _ := azure.ExpandScopeFilter(sf)
 		armMatches := map[int]struct{}{}
@@ -208,7 +217,7 @@ func filterRoles(ctx context.Context, client ClientAPI, roles []azure.Role, role
 		}
 		if len(armMatches) > 0 {
 			for i := range armMatches {
-				out = append(out, roleTarget{role: roles[i], scope: expanded})
+				add(roleTarget{role: roles[i], scope: expanded})
 			}
 			continue
 		}
@@ -235,7 +244,7 @@ func filterRoles(ctx context.Context, client ClientAPI, roles []azure.Role, role
 					mgCache[mgID] = set
 				}
 				if _, ok := mgCache[mgID][strings.ToLower(guid)]; ok {
-					out = append(out, roleTarget{role: roles[i], scope: "/subscriptions/" + guid})
+					add(roleTarget{role: roles[i], scope: "/subscriptions/" + guid})
 				}
 			}
 			if len(out) > before {
@@ -253,7 +262,7 @@ func filterRoles(ctx context.Context, client ClientAPI, roles []azure.Role, role
 		}
 		for _, j := range dispIdx {
 			i := roleIdx[j]
-			out = append(out, roleTarget{role: roles[i], scope: roles[i].Scope})
+			add(roleTarget{role: roles[i], scope: roles[i].Scope})
 		}
 	}
 	return out, nil
