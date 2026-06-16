@@ -112,6 +112,9 @@ func (c *Client) doRequest(ctx context.Context, method, reqURL, token string, bo
 			return nil, fmt.Errorf("execute request: %w", err)
 		}
 		if resp.StatusCode == http.StatusTooManyRequests {
+			if attempt == maxRetries {
+				return nil, errorFromResponse(resp)
+			}
 			resp.Body.Close()
 			wait := retryAfter(resp, attempt)
 			select {

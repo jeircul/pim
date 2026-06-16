@@ -130,7 +130,8 @@ func (c *Client) ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) (
 			subs = append(subs, ss...)
 			for _, s := range ss {
 				k := strings.ToLower(s.ID)
-				if _, exists := parents[k]; !exists {
+				existing, exists := parents[k]
+				if !exists || id < existing {
 					parents[k] = id
 				}
 			}
@@ -146,6 +147,22 @@ func (c *Client) ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) (
 
 	wg.Wait()
 	return subs, parents, warnings, err
+}
+
+// SubscriptionUnderMG reports whether subGUID is reachable under mgID.
+// Returns (false, nil) when the GUID is not found — that is not an error.
+func (c *Client) SubscriptionUnderMG(ctx context.Context, mgID, subGUID string) (bool, error) {
+	list, _, _, err := c.ListAllSubscriptionsUnderMG(ctx, mgID)
+	if err != nil {
+		return false, fmt.Errorf("list subscriptions under management group %s: %w", mgID, err)
+	}
+	lower := strings.ToLower(subGUID)
+	for _, s := range list {
+		if strings.ToLower(s.ID) == lower {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (c *Client) listManagementGroupChildrenWithToken(ctx context.Context, mgID, token string) ([]ManagementGroup, []Subscription, error) {

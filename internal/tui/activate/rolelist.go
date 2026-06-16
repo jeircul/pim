@@ -1,6 +1,7 @@
 package activate
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -34,8 +35,9 @@ type RoleList struct {
 	loadFunc     func() ([]azure.Role, error)
 	loadActiveFn func() ([]azure.ActiveAssignment, error)
 	// roleFilter auto-advances when a single --role flag match is found
-	roleFilter  []string
-	scopeFilter []string
+	roleFilter   []string
+	scopeFilter  []string
+	resolveMGSub func(ctx context.Context, mgID, subGUID string) (bool, error)
 }
 
 // NewRoleList creates a RoleList model.
@@ -46,6 +48,7 @@ func NewRoleList(
 	roleFilter []string,
 	scopeFilter []string,
 	loadFunc func() ([]azure.Role, error),
+	resolveMGSub func(ctx context.Context, mgID, subGUID string) (bool, error),
 ) RoleList {
 	return RoleList{
 		theme:        theme,
@@ -57,6 +60,7 @@ func NewRoleList(
 		loadActiveFn: loadActive,
 		roleFilter:   roleFilter,
 		scopeFilter:  scopeFilter,
+		resolveMGSub: resolveMGSub,
 	}
 }
 
@@ -222,15 +226,7 @@ func (m *RoleList) autoAdvance() tea.Cmd {
 		for _, r := range matches {
 			for _, sf := range m.scopeFilter {
 				expanded, _ := azure.ExpandScopeFilter(sf)
-				// Direct ARM child match (sub/RG filter under a sub/RG role scope).
 				if azure.ScopeMatches(sf, r.Scope, r.ScopeDisplay) || azure.ScopeIsChildOf(expanded, r.Scope) {
-					narrowed = append(narrowed, r)
-					break
-				}
-				// MG-scoped role + subscription/RG filter: include as candidate;
-				// scopeOverride will pin the target scope when advanceFromRoles runs.
-				if azure.IsManagementGroupScope(r.Scope) &&
-					(azure.IsSubscriptionScope(expanded) || azure.IsResourceGroupScope(expanded)) {
 					narrowed = append(narrowed, r)
 					break
 				}
@@ -239,6 +235,44 @@ func (m *RoleList) autoAdvance() tea.Cmd {
 		if len(narrowed) == 1 {
 			r := narrowed[0]
 			return func() tea.Msg { return RoleListDoneMsg{Selected: []azure.Role{r}} }
+		}
+		// If unresolved and all remaining matches are MG-scoped with a subscription GUID
+		// filter, fire async membership resolution via ResolveMGSub.
+		if m.resolveMGSub != nil {
+			guid := ""
+			for _, sf := range m.scopeFilter {
+				if g := azure.BareSubscriptionGUID(sf); g != "" {
+					guid = g
+					break
+				}
+			}
+			if guid != "" {
+				allMG := true
+				for _, r := range matches {
+					if !azure.IsManagementGroupScope(r.Scope) {
+						allMG = false
+						break
+					}
+				}
+				if allMG {
+					candidates := matches
+					resolveFn := m.resolveMGSub
+					return func() tea.Msg {
+						var verified []azure.Role
+						for _, r := range candidates {
+							mgID := azure.ManagementGroupIDFromScope(r.Scope)
+							ok, err := resolveFn(context.Background(), mgID, guid)
+							if err != nil {
+								return mgScopeResolveMsg{err: err}
+							}
+							if ok {
+								verified = append(verified, r)
+							}
+						}
+						return mgScopeResolveMsg{selected: verified}
+					}
+				}
+			}
 		}
 	}
 	return nil

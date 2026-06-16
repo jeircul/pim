@@ -57,7 +57,12 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Enter):
 			if len(acts) > 0 {
 				a := acts[m.cursor]
+				scopeLabel := a.ScopeDisplay
+				if scopeLabel == "" {
+					scopeLabel = a.Scope
+				}
 				fav := state.Favorite{
+					Label:         a.Role + " @ " + scopeLabel,
 					Role:          a.Role,
 					Scope:         a.Scope,
 					Duration:      a.Duration,

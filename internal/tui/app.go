@@ -269,7 +269,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, cmd
-} // startStatus constructs a fresh status model and switches to that screen.
+}
+
+// startStatus constructs a fresh status model and switches to that screen.
 func (m *AppModel) startStatus() tea.Cmd {
 	client := m.a.Client
 	ctx := m.ctx
@@ -355,6 +357,11 @@ func (m *AppModel) startWizard(fav *state.Favorite, autoSubmit bool) tea.Cmd {
 			defer callCancel()
 			_, err := client.ActivateRole(callCtx, role, pid, justification, minutes, targetScope)
 			return err
+		},
+		ResolveMGSub: func(resolveCtx context.Context, mgID, subGUID string) (bool, error) {
+			callCtx, callCancel := context.WithTimeout(resolveCtx, 60*time.Second)
+			defer callCancel()
+			return client.SubscriptionUnderMG(callCtx, mgID, subGUID)
 		},
 	}
 

@@ -167,3 +167,21 @@ func TestParse_search_extraPositional(t *testing.T) {
 		t.Error("expected error for extra positional, got nil")
 	}
 }
+
+func TestSearchRejectsActivationFlags(t *testing.T) {
+	tests := []struct {
+		args []string
+	}{
+		{[]string{"search", "--role", "Reader"}},
+		{[]string{"search", "--scope", "my-sub"}},
+		{[]string{"search", "-t", "1h"}},
+		{[]string{"search", "-j", "test"}},
+		{[]string{"search", "--yes"}},
+	}
+	for _, tc := range tests {
+		_, err := Parse(tc.args)
+		if err == nil {
+			t.Errorf("Parse(%v) expected error, got nil", tc.args)
+		}
+	}
+}

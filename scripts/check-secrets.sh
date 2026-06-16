@@ -19,7 +19,7 @@ check_content() {
   content="$2"
 
   # Real GUID check: matches a full UUID not in the allowlist.
-  hits=$(printf '%s' "$content" | grep -oE '[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}' \
+  hits=$(printf '%s' "$content" | grep -ioE '[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}' \
     | grep -vEi "^($GUID_ALLOWLIST)" || true)
   if [ -n "$hits" ]; then
     printf 'FAIL [real GUID] in %s:\n' "$label"

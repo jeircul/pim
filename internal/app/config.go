@@ -142,6 +142,10 @@ func Parse(args []string) (Config, error) {
 		return cfg, fmt.Errorf("invalid --output %q: must be table or json", outStr)
 	}
 
+	if cfg.Command == CmdSearch && (len(cfg.Roles) > 0 || len(cfg.Scopes) > 0 || cfg.TimeStr != "" || cfg.Justification != "" || cfg.Yes) {
+		return cfg, fmt.Errorf("search: --role, --scope, --time, --justification, --yes are not valid for this command")
+	}
+
 	return cfg, nil
 }
 

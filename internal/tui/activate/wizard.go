@@ -1,6 +1,7 @@
 package activate
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -43,10 +44,18 @@ type Deps struct {
 	LoadSubs    func(mgID string) ([]azure.ManagementGroup, []azure.Subscription, error)
 	LoadRGs     func(subID string) ([]azure.ResourceGroup, error)
 	Activate    func(role azure.Role, principalID, justification string, minutes int, targetScope string) error
+	// ResolveMGSub reports whether a subscription GUID is reachable under the given MG.
+	ResolveMGSub func(ctx context.Context, mgID, subGUID string) (bool, error)
 }
 
 // autoConfirmMsg triggers auto-submission on the confirm step (--yes flag).
 type autoConfirmMsg struct{}
+
+// mgScopeResolveMsg carries the result of async MG-membership resolution.
+type mgScopeResolveMsg struct {
+	selected []azure.Role
+	err      error
+}
 
 // Wizard is the root model for the 4-step activation flow.
 type Wizard struct {
@@ -75,7 +84,7 @@ type Wizard struct {
 // New creates a Wizard. Call Init() to start.
 func New(theme styles.Theme, keys styles.KeyMap, deps Deps) Wizard {
 	w := Wizard{theme: theme, keys: keys, deps: deps}
-	w.roleList = NewRoleList(theme, keys, deps.LoadActive, deps.RoleFilter, deps.ScopeFilter, deps.LoadRoles)
+	w.roleList = NewRoleList(theme, keys, deps.LoadActive, deps.RoleFilter, deps.ScopeFilter, deps.LoadRoles, deps.ResolveMGSub)
 	return w
 }
 
@@ -164,6 +173,14 @@ func (w Wizard) Update(msg tea.Msg) (Wizard, tea.Cmd) {
 
 	case autoConfirmMsg:
 		return w.handleAutoConfirm()
+
+	case mgScopeResolveMsg:
+		if msg.err != nil || len(msg.selected) == 0 {
+			w.deps.Silent = false
+			return w, nil
+		}
+		w.selectedRoles = msg.selected
+		return w.advanceFromRoles()
 	}
 
 	// Delegate to active step first so sub-models (e.g. filter mode in rolelist)
@@ -336,9 +353,10 @@ func (w Wizard) advanceFromRoles() (Wizard, tea.Cmd) {
 // scopeOverride returns the target scope to use when a --scope filter matches
 // the role's eligibility scope. Returns the filter value when it is a valid
 // ARM child path, or the role's own scope when the filter matches by display
-// name substring. For MG-scoped roles, a subscription or RG filter is accepted
-// directly — the user asserts the subscription is under the MG. Returns "" when
-// no filter matches.
+// name substring. For MG-scoped roles with a subscription/RG filter, the
+// filter is trusted only when this role is the sole MG-scoped selection —
+// async resolution via ResolveMGSub has already verified membership at that
+// point (or the user made an unambiguous manual pick). Returns "" otherwise.
 func (w Wizard) scopeOverride(r azure.Role) string {
 	for _, s := range w.deps.ScopeFilter {
 		s = strings.TrimSpace(s)
@@ -349,11 +367,21 @@ func (w Wizard) scopeOverride(r azure.Role) string {
 		if azure.ScopeIsChildOf(expanded, r.Scope) {
 			return expanded
 		}
-		// MG-scoped role + subscription/RG filter: trust the filter directly.
-		// The MG→subscription relationship cannot be verified from scope strings alone.
+		// MG-scoped role + subscription/RG filter: only trust when exactly one
+		// MG-scoped role is selected, ensuring async resolution or manual
+		// unambiguous pick — never blind-trust when multiple MG candidates exist.
 		if azure.IsManagementGroupScope(r.Scope) &&
 			(azure.IsSubscriptionScope(expanded) || azure.IsResourceGroupScope(expanded)) {
-			return expanded
+			mgCount := 0
+			for _, sel := range w.selectedRoles {
+				if azure.IsManagementGroupScope(sel.Scope) {
+					mgCount++
+				}
+			}
+			if mgCount == 1 {
+				return expanded
+			}
+			return ""
 		}
 		lower := strings.ToLower(s)
 		if strings.Contains(strings.ToLower(r.ScopeDisplay), lower) ||
