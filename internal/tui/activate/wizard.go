@@ -3,6 +3,7 @@ package activate
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/jeircul/pim/internal/azure"
@@ -63,10 +64,12 @@ type Wizard struct {
 	confirm   Confirm
 
 	// accumulation across steps
-	selectedRoles []azure.Role
-	scopeQueue    []azure.Role // MG-scoped roles still needing scope selection
-	items         []activationItem
-	scopeVisited  bool // whether the scope tree step was visited this run
+	selectedRoles     []azure.Role
+	scopeQueue        []azure.Role // MG-scoped roles still needing scope selection
+	items             []activationItem
+	scopeVisited      bool // whether the scope tree step was visited this run
+	lastMinutes       int
+	lastJustification string
 }
 
 // New creates a Wizard. Call Init() to start.
@@ -135,11 +138,27 @@ func (w Wizard) Update(msg tea.Msg) (Wizard, tea.Cmd) {
 		return w.startOptions()
 
 	case OptionsDoneMsg:
+		w.lastMinutes = msg.Minutes
+		w.lastJustification = msg.Justification
 		w.deps.Store.AddRecentJustification(msg.Justification)
 		_ = w.deps.Store.SaveState()
 		return w.startConfirm(msg.Minutes, msg.Justification)
 
 	case ConfirmDoneMsg:
+		for _, r := range msg.Results {
+			if r.Err != nil {
+				continue
+			}
+			w.deps.Store.AddRecentActivation(state.RecentActivation{
+				Role:          r.RoleName,
+				Scope:         r.Scope,
+				ScopeDisplay:  azure.DefaultScopeDisplay(r.Scope, ""),
+				Duration:      azure.FormatDuration(w.lastMinutes),
+				Justification: w.lastJustification,
+				ActivatedAt:   time.Now(),
+			})
+		}
+		_ = w.deps.Store.SaveState()
 		done := WizardDoneMsg{Results: msg.Results}
 		return w, func() tea.Msg { return done }
 
@@ -365,6 +384,8 @@ func (w Wizard) startOptions() (Wizard, tea.Cmd) {
 	if w.deps.TimeStr != "" && w.deps.Justific != "" {
 		mins, err := azure.ParseDurationMinutes(w.deps.TimeStr)
 		if err == nil {
+			w.lastMinutes = mins
+			w.lastJustification = w.deps.Justific
 			return w.startConfirm(mins, w.deps.Justific)
 		}
 	}

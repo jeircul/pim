@@ -8,9 +8,11 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/jeircul/pim/internal/app"
 	"github.com/jeircul/pim/internal/azure"
+	"github.com/jeircul/pim/internal/state"
 )
 
 // ClientAPI is the subset of azure.Client methods used by headless execution.
@@ -156,6 +158,14 @@ func runActivate(ctx context.Context, a *app.App, client ClientAPI, user *azure.
 			continue
 		}
 		fmt.Fprintf(out, "Activated: %s @ %s for %s\n", match.role.RoleName, scope, timeStr)
+		a.Store.AddRecentActivation(state.RecentActivation{
+			Role:          match.role.RoleName,
+			Scope:         scope,
+			ScopeDisplay:  match.role.ScopeDisplay,
+			Duration:      timeStr,
+			Justification: cfg.Justification,
+			ActivatedAt:   time.Now(),
+		})
 	}
 
 	if lastErr != nil {
