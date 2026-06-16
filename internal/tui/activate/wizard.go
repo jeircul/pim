@@ -336,15 +336,24 @@ func (w Wizard) advanceFromRoles() (Wizard, tea.Cmd) {
 // scopeOverride returns the target scope to use when a --scope filter matches
 // the role's eligibility scope. Returns the filter value when it is a valid
 // ARM child path, or the role's own scope when the filter matches by display
-// name substring. Returns "" when no filter matches.
+// name substring. For MG-scoped roles, a subscription or RG filter is accepted
+// directly — the user asserts the subscription is under the MG. Returns "" when
+// no filter matches.
 func (w Wizard) scopeOverride(r azure.Role) string {
 	for _, s := range w.deps.ScopeFilter {
 		s = strings.TrimSpace(s)
 		if s == "" {
 			continue
 		}
-		if azure.ScopeIsChildOf(s, r.Scope) {
-			return s
+		expanded, _ := azure.ExpandScopeFilter(s)
+		if azure.ScopeIsChildOf(expanded, r.Scope) {
+			return expanded
+		}
+		// MG-scoped role + subscription/RG filter: trust the filter directly.
+		// The MG→subscription relationship cannot be verified from scope strings alone.
+		if azure.IsManagementGroupScope(r.Scope) &&
+			(azure.IsSubscriptionScope(expanded) || azure.IsResourceGroupScope(expanded)) {
+			return expanded
 		}
 		lower := strings.ToLower(s)
 		if strings.Contains(strings.ToLower(r.ScopeDisplay), lower) ||

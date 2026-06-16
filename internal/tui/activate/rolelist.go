@@ -222,7 +222,15 @@ func (m *RoleList) autoAdvance() tea.Cmd {
 		for _, r := range matches {
 			for _, sf := range m.scopeFilter {
 				expanded, _ := azure.ExpandScopeFilter(sf)
+				// Direct ARM child match (sub/RG filter under a sub/RG role scope).
 				if azure.ScopeMatches(sf, r.Scope, r.ScopeDisplay) || azure.ScopeIsChildOf(expanded, r.Scope) {
+					narrowed = append(narrowed, r)
+					break
+				}
+				// MG-scoped role + subscription/RG filter: include as candidate;
+				// scopeOverride will pin the target scope when advanceFromRoles runs.
+				if azure.IsManagementGroupScope(r.Scope) &&
+					(azure.IsSubscriptionScope(expanded) || azure.IsResourceGroupScope(expanded)) {
 					narrowed = append(narrowed, r)
 					break
 				}
