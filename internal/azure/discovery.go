@@ -55,7 +55,7 @@ func classifyChildResources(resources []childResource) ([]ManagementGroup, []Sub
 
 // mgNodeTimeoutDefault bounds each management-group node lookup so one stalled
 // node does not delay its siblings. Override with PIM_MG_NODE_TIMEOUT (e.g. "45s").
-const mgNodeTimeoutDefault = 30 * time.Second
+const mgNodeTimeoutDefault = 15 * time.Second
 
 func mgNodeTimeout() time.Duration {
 	if v := os.Getenv("PIM_MG_NODE_TIMEOUT"); v != "" {
@@ -107,7 +107,11 @@ func (c *Client) ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) (
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			nodeCtx, cancel := context.WithTimeout(ctx, nodeTO)
+			deadline := time.Now().Add(nodeTO)
+			if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+				deadline = d
+			}
+			nodeCtx, cancel := context.WithDeadline(ctx, deadline)
 			mgs, ss, e := c.listManagementGroupChildrenWithToken(nodeCtx, id, token)
 			cancel()
 
