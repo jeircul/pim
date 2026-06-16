@@ -52,8 +52,10 @@ type Deps struct {
 type autoConfirmMsg struct{}
 
 // mgScopeResolveMsg carries the result of async MG-membership resolution.
+// fallback holds the original candidates to use when resolution errors on all MGs.
 type mgScopeResolveMsg struct {
 	selected []azure.Role
+	fallback []azure.Role
 	err      error
 }
 
@@ -175,12 +177,21 @@ func (w Wizard) Update(msg tea.Msg) (Wizard, tea.Cmd) {
 		return w.handleAutoConfirm()
 
 	case mgScopeResolveMsg:
-		if msg.err != nil || len(msg.selected) == 0 {
+		switch {
+		case len(msg.selected) > 0:
+			// At least one MG verified — advance with verified set.
+			w.selectedRoles = msg.selected
+			return w.advanceFromRoles()
+		case len(msg.fallback) == 1:
+			// All resolution attempts errored (e.g. MG API timeout) but exactly
+			// one candidate exists — trust the user's configured scope and advance.
+			w.selectedRoles = msg.fallback
+			return w.advanceFromRoles()
+		default:
+			// Ambiguous or unresolvable — drop Silent and show the role list.
 			w.deps.Silent = false
 			return w, nil
 		}
-		w.selectedRoles = msg.selected
-		return w.advanceFromRoles()
 	}
 
 	// Delegate to active step first so sub-models (e.g. filter mode in rolelist)

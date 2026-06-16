@@ -259,15 +259,24 @@ func (m *RoleList) autoAdvance() tea.Cmd {
 					resolveFn := m.resolveMGSub
 					return func() tea.Msg {
 						var verified []azure.Role
+						allErrored := true
 						for _, r := range candidates {
 							mgID := azure.ManagementGroupIDFromScope(r.Scope)
 							ok, err := resolveFn(context.Background(), mgID, guid)
 							if err != nil {
-								return mgScopeResolveMsg{err: err}
+								// This MG's API timed out — skip it, don't abort.
+								continue
 							}
+							allErrored = false
 							if ok {
 								verified = append(verified, r)
 							}
+						}
+						// If every MG call errored (all timed out), pass candidates as
+						// fallback so the wizard can trust the user's configured scope
+						// when only one candidate exists.
+						if allErrored {
+							return mgScopeResolveMsg{fallback: candidates}
 						}
 						return mgScopeResolveMsg{selected: verified}
 					}

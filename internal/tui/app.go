@@ -333,7 +333,7 @@ func (m *AppModel) startWizard(fav *state.Favorite, autoSubmit bool) tea.Cmd {
 		AutoSubmit:  cfg.Yes,
 		Store:       m.a.Store,
 		LoadRoles: func() ([]azure.Role, error) {
-			callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
+			callCtx, callCancel := context.WithTimeout(ctx, 60*time.Second)
 			defer callCancel()
 			return client.GetEligibleRoles(callCtx)
 		},
