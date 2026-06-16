@@ -19,6 +19,11 @@ tasks:
     cmds:
       - go fmt ./...
 
+  check:
+    desc: Scan staged content and key docs for sensitive identifiers (GUIDs, blocklisted names)
+    cmds:
+      - bash scripts/check-secrets.sh
+
   tidy:
     desc: Tidy dependencies (go.mod/go.sum)
     cmds:
@@ -103,6 +108,8 @@ tasks:
         msg: "Working tree is dirty after fmt — commit formatting/generated changes before releasing"
       - sh: "task test"
         msg: "tests failed"
+      - sh: "task check"
+        msg: "sensitive identifiers detected — see AGENTS.md public-artifact sanitization rules"
 
   release:stable:
     desc: Tag and publish a stable release from main (requires GITHUB_TOKEN)
@@ -143,6 +150,8 @@ tasks:
         msg: "Working tree is dirty after fmt — commit formatting/generated changes before releasing"
       - sh: "task test"
         msg: "tests failed"
+      - sh: "task check"
+        msg: "sensitive identifiers detected — see AGENTS.md public-artifact sanitization rules"
 
   release:snapshot:
     desc: Generate release artefacts locally without publishing

@@ -119,3 +119,28 @@ Full API reference: `.agents/skills/golang/references/azure-pim-api.md`.
 
 - OpenCode: `skill golang` (auto-loads on Go/Azure tasks).
 - Other agents: read `.agents/skills/golang/SKILL.md` and `references/`.
+
+## Public-artifact sanitization (mandatory)
+
+**Scope:** every PR body, commit message, README/CHANGELOG/docs edit, code comment, example block, and test fixture that will be committed, pushed, or posted publicly.
+
+**Hard rule:** Identifiers that originate from user-pasted terminal output, chat history, or a live environment are sensitive by default. Never echo them verbatim into any committed or public artifact.
+
+**Mandatory placeholder vocabulary:**
+
+| Real thing | Placeholder to use |
+|---|---|
+| Subscription GUID | `00000000-0000-0000-0000-000000000000` |
+| Management group / tenant name | `my-mgmt-group` |
+| Subscription display name | `my-subscription` |
+| Resource group | `my-rg` |
+| Role names | Azure built-ins only: `Reader`, `Owner`, `Contributor` |
+
+**Pre-write self-check (run before every commit/PR/doc edit):**
+1. Does any value in this text originate from pasted terminal output or a live session?
+2. Does it match `[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}` and is it **not** an all-zero/repeated-nibble sentinel?
+3. Is it a proper noun that is not an Azure built-in role or a well-known public Azure service name?
+
+→ Any "yes" → replace with the placeholder above **before** writing.
+
+**Mechanical backstop:** `task check` runs `scripts/check-secrets.sh` which scans staged content and key doc files. It also runs as a precondition of `task release:dev` and `task release:stable`. Add internal names to `.secrets-blocklist` (gitignored, never committed).
