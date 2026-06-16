@@ -277,7 +277,11 @@ func scopeTreeConsumed(prev, next ScopeTree, msg tea.Msg) bool {
 // View renders the current step with a wizard header.
 func (w Wizard) View() string {
 	if w.deps.Silent && w.step == stepRoleList {
-		return ""
+		if w.roleList.loading {
+			return w.roleList.spinner.View() + " activating…\n"
+		}
+		// Roles loaded but autoAdvance didn't fire — drop Silent and show the list.
+		w.deps.Silent = false
 	}
 	var sb strings.Builder
 	sb.WriteString(w.renderStepIndicator() + "\n\n")

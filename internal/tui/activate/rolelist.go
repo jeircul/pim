@@ -221,7 +221,8 @@ func (m *RoleList) autoAdvance() tea.Cmd {
 		var narrowed []azure.Role
 		for _, r := range matches {
 			for _, sf := range m.scopeFilter {
-				if azure.ScopeMatches(sf, r.Scope, r.ScopeDisplay) {
+				expanded, _ := azure.ExpandScopeFilter(sf)
+				if azure.ScopeMatches(sf, r.Scope, r.ScopeDisplay) || azure.ScopeIsChildOf(expanded, r.Scope) {
 					narrowed = append(narrowed, r)
 					break
 				}
