@@ -9,6 +9,8 @@ Terminal UI for activating, deactivating, and inspecting Azure Privileged Identi
 - 🔭 Scope tree with `/` filter and viewport scrolling for large tenants
 - 🎨 Adaptive theme — works on light and dark terminals
 - ⭐ Favorites with 1–9 number-key shortcuts for instant re-activation
+- 🕐 Recent elevations — `R` from the dashboard shows the last 10 successful activations; press Enter to re-activate with pre-filled fields
+- 🔍 `pim search [query]` — find eligible subscriptions by name/GUID before activating
 - 💾 TOML state persistence — remembers recent justifications and favorites across sessions
 - 🐚 Shell completions for bash, zsh, and fish
 
@@ -35,6 +37,8 @@ pim                          # TUI dashboard — shows active elevations and fav
 pim activate                 # launch activation wizard from step 1
 pim deactivate               # select and deactivate active elevations
 pim status                   # view active and eligible roles
+pim search vwan              # find eligible subscriptions matching "vwan"
+pim search 00000000-...      # find by subscription GUID
 pim version                  # print version
 ```
 
@@ -86,6 +90,24 @@ pim status --headless --output json
 
 Exit code `0` on success, `1` on error, `130` on user cancel (Ctrl-C).
 
+### 🔍 pim search
+
+Discover eligible subscriptions before activating. Searches across all management groups the caller has access to.
+
+```sh
+pim search vwan              # filter by name substring
+pim search hub01             # case-insensitive
+pim search 00000000-...      # filter by subscription GUID
+pim search --mg my-mgmt-group  # limit to a specific management group
+pim search --output json     # machine-readable output
+```
+
+Use the GUID from the results directly with `pim activate --scope`:
+
+```sh
+pim activate --role Reader --scope 00000000-0000-0000-0000-000000000000 -t 1h -j "ref PR#123" -y --headless
+```
+
 ### 🔍 Matching policy for `--role` and `--scope`
 
 Applies to both flag acceleration (TUI) and headless mode.
@@ -122,12 +144,17 @@ Set `PIM_ALLOW_DEVICE_LOGIN=true` (or `1` / `yes`) to allow interactive device c
 
 ## ⚙️ Configuration
 
-State is stored in `~/.config/pim/`:
+State is stored in the platform config directory:
+
+| Platform | Path |
+|---|---|
+| Linux / macOS | `$XDG_CONFIG_HOME/pim` (defaults to `~/.config/pim`) |
+| Windows | `%APPDATA%\pim` (e.g. `C:\Users\<name>\AppData\Roaming\pim`) |
 
 | File | Purpose |
 |---|---|
 | `config.toml` | Hand-editable preferences and favorites |
-| `state.toml` | Auto-managed: recent justifications |
+| `state.toml` | Auto-managed: recent justifications and recent activations |
 
 Example `config.toml`:
 
@@ -154,6 +181,10 @@ key   = 2
 `scope` accepts a full ARM path (`/subscriptions/…`) or a display-name substring — the TUI resolves either.
 
 `label` is required. When `role`, `scope`, `duration`, and `justification` are all set, pressing the shortcut key activates immediately with no prompts and returns to the dashboard with a result notice. If any field is missing the shortcut shows an error notice — open the favorite in the favorites editor (`f`) and activate from there; the wizard will stop at the first missing field.
+
+### Recent activations
+
+Press `R` from the dashboard to open the recent activations screen. It shows the last 10 **successful** activations (role, scope, duration, time ago, justification). Press `Enter` on any row to open the activation wizard pre-filled with those details. Press `esc` or `q` to return to the dashboard.
 
 ## 🛠️ Development
 

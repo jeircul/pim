@@ -466,11 +466,11 @@ func makeAppMG(mgFilter string) *app.App {
 }
 
 func TestRunSearchMGFilter(t *testing.T) {
-	omniaScope := "/providers/Microsoft.Management/managementGroups/example-mg"
+	mgScope := "/providers/Microsoft.Management/managementGroups/example-mg"
 	otherScope := "/providers/Microsoft.Management/managementGroups/Other"
 	mock := &searchMock{
 		eligibleRoles: []azure.Role{
-			searchMGRole(omniaScope, "Owner"),
+			searchMGRole(mgScope, "Owner"),
 			searchMGRole(otherScope, "Reader"),
 		},
 		mgSubs: map[string][]azure.Subscription{
