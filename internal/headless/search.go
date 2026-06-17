@@ -206,13 +206,21 @@ func tomlFromHits(hits []SearchHit, roles []azure.Role, out io.Writer) error {
 		return nil
 	}
 
-	// For MG-scoped roles we need to know which matched subscriptions fall under each MG.
-	// h.ManagementGroup is the MG ID (set by buildSearchHits from ManagementGroupIDFromScope).
+	// For MG-scoped roles, map MG ID → matched subscription IDs. A hit may be
+	// reached via both a subscription-direct role and an MG-inherited role; the
+	// merge in buildSearchHits keeps only the first EligibilityScope, so neither
+	// field alone is sufficient. Key on both the physical parent
+	// (h.ManagementGroup) and the eligibility MG ID extracted from EligibilityScope;
+	// the role loop looks up by ManagementGroupIDFromScope(r.Scope) — bare MG IDs.
 	mgToMatchedSubs := make(map[string][]string)
 	for _, h := range hits {
-		if h.ManagementGroup != "" {
-			mgKey := strings.ToLower(h.ManagementGroup)
-			mgToMatchedSubs[mgKey] = append(mgToMatchedSubs[mgKey], h.SubscriptionID)
+		if mg := strings.ToLower(h.ManagementGroup); mg != "" {
+			mgToMatchedSubs[mg] = append(mgToMatchedSubs[mg], h.SubscriptionID)
+		}
+		if azure.IsManagementGroupScope(h.EligibilityScope) {
+			if es := strings.ToLower(azure.ManagementGroupIDFromScope(h.EligibilityScope)); es != "" {
+				mgToMatchedSubs[es] = append(mgToMatchedSubs[es], h.SubscriptionID)
+			}
 		}
 	}
 

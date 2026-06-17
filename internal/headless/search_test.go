@@ -893,3 +893,46 @@ func TestRunSearchTOMLOutput(t *testing.T) {
 		t.Errorf("expected 2 [[favorites]] blocks, got %d:\n%s", got, out)
 	}
 }
+
+func TestTomlFromHitsParentChildMG(t *testing.T) {
+	// Sub is physically under child-mg-a, but the eligibility is granted at the
+	// ancestor parent-mg. The role loop looks up by parent-mg's ID, while the
+	// hit's ManagementGroup is child-mg-a — they must still resolve to MG roles.
+	// Regression guard: MG-inherited roles must not be dropped from TOML output
+	// when the physical parent MG differs from the eligibility MG.
+	mgScope := "/providers/Microsoft.Management/managementGroups/parent-mg"
+	mock := &searchMock{
+		eligibleRoles: []azure.Role{
+			searchMGRole(mgScope, "Reader"),
+			searchMGRole(mgScope, "Contributor"),
+		},
+		mgSubs: map[string][]azure.Subscription{
+			"parent-mg": {
+				{ID: "00000000-0000-0000-0000-000000000000", DisplayName: "my-subscription"},
+			},
+		},
+		mgParents: map[string]map[string]string{
+			"parent-mg": {"00000000-0000-0000-0000-000000000000": "child-mg-a"},
+		},
+	}
+	var buf strings.Builder
+	if err := runSearch(t.Context(), makeApp("", app.OutputTOML), mock, &buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+
+	if got := strings.Count(out, "[[favorites]]"); got != 2 {
+		t.Errorf("expected 2 [[favorites]] blocks (MG roles must survive child-MG parent), got %d:\n%s", got, out)
+	}
+	for _, role := range []string{"Reader", "Contributor"} {
+		if !strings.Contains(out, `role          = "`+role+`"`) {
+			t.Errorf("expected role %q in TOML output:\n%s", role, out)
+		}
+	}
+	if !strings.Contains(out, `scope         = "`+mgScope+`"`) {
+		t.Errorf("expected MG ARM path scope in TOML output:\n%s", out)
+	}
+	if !strings.Contains(out, `label         = "Reader @ my-subscription"`) {
+		t.Errorf("expected subscription-name label for MG role:\n%s", out)
+	}
+}
