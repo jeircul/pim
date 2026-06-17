@@ -202,17 +202,17 @@ func runSearchTOML(roles []azure.Role, a *app.App, out io.Writer) error {
 		default:
 			continue
 		}
-		if q != "" {
+		if mgf != "" {
+			if !strings.Contains(strings.ToLower(r.Scope), mgf) &&
+				!strings.Contains(strings.ToLower(r.ScopeDisplay), mgf) {
+				continue
+			}
+		}
+		if q != "" && r.ScopeKind() == azure.ScopeSubscription {
 			lower := strings.ToLower(q)
 			if !strings.Contains(strings.ToLower(r.ScopeDisplay), lower) &&
 				!strings.Contains(strings.ToLower(r.Scope), lower) &&
 				!strings.Contains(strings.ToLower(r.RoleName), lower) {
-				continue
-			}
-		}
-		if mgf != "" {
-			if !strings.Contains(strings.ToLower(r.Scope), mgf) &&
-				!strings.Contains(strings.ToLower(r.ScopeDisplay), mgf) {
 				continue
 			}
 		}
