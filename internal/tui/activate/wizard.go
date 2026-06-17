@@ -150,12 +150,13 @@ func (w Wizard) Update(msg tea.Msg) (Wizard, tea.Cmd) {
 				continue
 			}
 			w.deps.Store.AddRecentActivation(state.RecentActivation{
-				Role:          r.RoleName,
-				Scope:         r.Scope,
-				ScopeDisplay:  azure.DefaultScopeDisplay(r.Scope, ""),
-				Duration:      azure.FormatDuration(w.lastMinutes),
-				Justification: w.lastJustification,
-				ActivatedAt:   time.Now(),
+				Role:             r.RoleName,
+				Scope:            r.Scope,
+				ScopeDisplay:     azure.DefaultScopeDisplay(r.Scope, ""),
+				EligibilityScope: r.EligibilityScope,
+				Duration:         azure.FormatDuration(w.lastMinutes),
+				Justification:    w.lastJustification,
+				ActivatedAt:      time.Now(),
 			})
 		}
 		_ = w.deps.Store.SaveState()

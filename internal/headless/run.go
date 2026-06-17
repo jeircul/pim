@@ -159,12 +159,13 @@ func runActivate(ctx context.Context, a *app.App, client ClientAPI, user *azure.
 		}
 		fmt.Fprintf(out, "Activated: %s @ %s for %s\n", match.role.RoleName, scope, timeStr)
 		a.Store.AddRecentActivation(state.RecentActivation{
-			Role:          match.role.RoleName,
-			Scope:         scope,
-			ScopeDisplay:  azure.DefaultScopeDisplay(scope, ""),
-			Duration:      timeStr,
-			Justification: cfg.Justification,
-			ActivatedAt:   time.Now(),
+			Role:             match.role.RoleName,
+			Scope:            scope,
+			ScopeDisplay:     azure.DefaultScopeDisplay(scope, ""),
+			EligibilityScope: match.role.Scope,
+			Duration:         timeStr,
+			Justification:    cfg.Justification,
+			ActivatedAt:      time.Now(),
 		})
 	}
 

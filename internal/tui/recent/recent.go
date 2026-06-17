@@ -61,10 +61,14 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				if scopeLabel == "" {
 					scopeLabel = a.Scope
 				}
+				reactivateScope := a.EligibilityScope
+				if reactivateScope == "" {
+					reactivateScope = a.Scope
+				}
 				fav := state.Favorite{
 					Label:         a.Role + " @ " + scopeLabel,
 					Role:          a.Role,
-					Scope:         a.Scope,
+					Scope:         reactivateScope,
 					Duration:      a.Duration,
 					Justification: a.Justification,
 				}

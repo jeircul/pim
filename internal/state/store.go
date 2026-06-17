@@ -54,12 +54,13 @@ func (f Favorite) MissingFields() string {
 
 // RecentActivation records a successfully completed role activation.
 type RecentActivation struct {
-	Role          string    `toml:"role"`
-	Scope         string    `toml:"scope"`
-	ScopeDisplay  string    `toml:"scope_display"`
-	Duration      string    `toml:"duration"`
-	Justification string    `toml:"justification"`
-	ActivatedAt   time.Time `toml:"activated_at"`
+	Role             string    `toml:"role"`
+	Scope            string    `toml:"scope"`
+	ScopeDisplay     string    `toml:"scope_display"`
+	EligibilityScope string    `toml:"eligibility_scope,omitempty"`
+	Duration         string    `toml:"duration"`
+	Justification    string    `toml:"justification"`
+	ActivatedAt      time.Time `toml:"activated_at"`
 }
 
 // Preferences holds user-editable preferences.

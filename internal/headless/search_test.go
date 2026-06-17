@@ -848,3 +848,34 @@ func TestBuildSearchHitsMGFilterSkipsUnrelatedMG(t *testing.T) {
 		t.Errorf("sub-b not found in hits: %v", subIDs)
 	}
 }
+
+func TestRunSearchTOMLOutput(t *testing.T) {
+	mock := &searchMock{
+		eligibleRoles: []azure.Role{
+			{
+				RoleName:     "Contributor",
+				Scope:        "/subscriptions/00000000-0000-0000-0000-000000000000",
+				ScopeDisplay: "my-subscription",
+			},
+			{
+				RoleName:     "Reader",
+				Scope:        "/providers/Microsoft.Management/managementGroups/my-mgmt-group",
+				ScopeDisplay: "My MG",
+			},
+		},
+	}
+	var buf strings.Builder
+	if err := runSearch(t.Context(), makeApp("", app.OutputTOML), mock, &buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `scope         = "/subscriptions/00000000-0000-0000-0000-000000000000"`) {
+		t.Errorf("expected sub ARM path in TOML output, got:\n%s", out)
+	}
+	if !strings.Contains(out, `scope         = "/providers/Microsoft.Management/managementGroups/my-mgmt-group"`) {
+		t.Errorf("expected MG ARM path in TOML output, got:\n%s", out)
+	}
+	if !strings.Contains(out, `role          = "Reader"`) {
+		t.Errorf("expected Reader role in TOML output, got:\n%s", out)
+	}
+}

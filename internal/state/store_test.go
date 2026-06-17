@@ -205,3 +205,34 @@ func TestRecentActivationPersistence(t *testing.T) {
 		t.Fatalf("expected persisted activation, got %v", acts)
 	}
 }
+
+func TestRecentActivationEligibilityScope(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := RecentActivation{
+		Role:             "Contributor",
+		Scope:            "/subscriptions/00000000-0000-0000-0000-000000000000",
+		EligibilityScope: "/providers/Microsoft.Management/managementGroups/my-mgmt-group",
+		Duration:         "1h",
+		Justification:    "test",
+	}
+	s.AddRecentActivation(a)
+	acts := s.RecentActivations()
+	if acts[0].EligibilityScope != "/providers/Microsoft.Management/managementGroups/my-mgmt-group" {
+		t.Errorf("expected eligibility scope, got %q", acts[0].EligibilityScope)
+	}
+	b := RecentActivation{
+		Role:          "Reader",
+		Scope:         "/subscriptions/00000000-0000-0000-0000-000000000001",
+		Duration:      "1h",
+		Justification: "test",
+	}
+	s.AddRecentActivation(b)
+	acts = s.RecentActivations()
+	if acts[0].EligibilityScope != "" {
+		t.Errorf("expected empty eligibility scope for old entry, got %q", acts[0].EligibilityScope)
+	}
+}

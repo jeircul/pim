@@ -37,7 +37,7 @@ pim                          # TUI dashboard — shows active elevations and fav
 pim activate                 # launch activation wizard from step 1
 pim deactivate               # select and deactivate active elevations
 pim status                   # view active and eligible roles
-pim search vwan              # find eligible subscriptions matching "vwan"
+pim search my-subscription   # find eligible subscriptions matching "my-subscription"
 pim search 00000000-...      # find by subscription GUID
 pim version                  # print version
 ```
@@ -55,6 +55,9 @@ pim activate --role Reader --scope my-subscription
 
 # Bare subscription GUID expands to /subscriptions/<guid>
 pim activate --role Reader --scope 00000000-0000-0000-0000-000000000000
+
+# MG ARM path — most precise; matches exactly when role is inherited from an MG
+pim activate --role Contributor --scope /providers/Microsoft.Management/managementGroups/my-mgmt-group -t 1h -j "testing" --yes
 
 # Auto-submit with no TUI interaction
 pim activate \
@@ -92,21 +95,17 @@ Exit code `0` on success, `1` on error, `130` on user cancel (Ctrl-C).
 
 ### 🔍 pim search
 
-Discover eligible subscriptions before activating. Searches across all management groups the caller has access to.
+Discover eligible subscriptions before activating. Use `--output toml` to generate a paste-ready `config.toml` favorite entry with the correct ARM scope already filled in.
 
 ```sh
-pim search vwan              # filter by name substring
-pim search hub01             # case-insensitive
-pim search 00000000-...      # filter by subscription GUID
-pim search --mg my-mgmt-group  # limit to a specific management group
-pim search --output json     # machine-readable output
+pim search my-subscription          # filter by name
+pim search 00000000-...             # filter by GUID
+pim search --mg my-mgmt-group       # limit to a management group
+pim search --output json            # machine-readable
+pim search --output toml            # paste-ready [[favorites]] blocks
 ```
 
-Use the GUID from the results directly with `pim activate --scope`:
-
-```sh
-pim activate --role Reader --scope 00000000-0000-0000-0000-000000000000 -t 1h -j "ref PR#123" -y --headless
-```
+The `--output toml` format produces one `[[favorites]]` block per eligible role, with `scope` set to the ARM eligibility path — the most precise value to use in `config.toml`.
 
 ### 🔍 Matching policy for `--role` and `--scope`
 
@@ -162,29 +161,33 @@ Example `config.toml`:
 [preferences]
 default_duration = "2h"   # default when no --time flag or favorite duration is set
 
+# Precise form: scope = MG ARM path (recommended for roles inherited from a management group)
+# Copy from: pim search --output toml
 [[favorites]]
-label         = "Prod reader"
-role          = "Reader"
-scope         = "my-prod-subscription"
-duration      = "1h"      # overrides default_duration for this favorite
-justification = "Daily read access"
+label         = "Contributor @ my-subscription"
+role          = "Contributor"
+scope         = "/providers/Microsoft.Management/managementGroups/my-mgmt-group"
+duration      = "1h"
+justification = "Daily access"
 key           = 1
 
+# Simple form: scope = bare subscription GUID (works when the role is eligible directly at the subscription)
 [[favorites]]
-label = "Dev owner"
-role  = "Owner"
-scope = "my-dev-subscription"
-# duration and justification omitted — opens wizard at the missing step
-key   = 2
+label         = "Reader @ my-other-subscription"
+role          = "Reader"
+scope         = "00000000-0000-0000-0000-000000000000"
+duration      = "2h"
+justification = "Read-only investigation"
+key           = 2
 ```
 
-`scope` accepts a full ARM path (`/subscriptions/…`) or a display-name substring — the TUI resolves either.
+**Which form to use:** Run `pim search --output toml` to get the exact `scope` value for any role. If the MANAGEMENT GROUP column in `pim search` shows a name (not `(direct)`), the role is inherited from an MG — use the MG ARM path as `scope`. If it shows `(direct)`, the subscription GUID is sufficient.
 
 `label` is required. When `role`, `scope`, `duration`, and `justification` are all set, pressing the shortcut key activates immediately with no prompts and returns to the dashboard with a result notice. If any field is missing the shortcut shows an error notice — open the favorite in the favorites editor (`f`) and activate from there; the wizard will stop at the first missing field.
 
 ### Recent activations
 
-Press `R` from the dashboard to open the recent activations screen. It shows the last 10 **successful** activations (role, scope, duration, time ago, justification). Press `Enter` on any row to open the activation wizard pre-filled with those details. Press `esc` or `q` to return to the dashboard.
+Press `R` from the dashboard to open the recent activations screen. It shows the last 10 **successful** activations (role, scope, duration, time ago, justification). Recent activations store the original eligibility scope so re-activation is as precise as using an MG ARM path directly in a favorite. Press `Enter` on any row to open the activation wizard pre-filled with those details. Press `esc` or `q` to return to the dashboard.
 
 ## 🛠️ Development
 

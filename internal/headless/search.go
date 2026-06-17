@@ -14,10 +14,11 @@ import (
 
 // SearchHit is a single activatable subscription returned by pim search.
 type SearchHit struct {
-	SubscriptionID  string   `json:"subscriptionId"`
-	DisplayName     string   `json:"displayName"`
-	ManagementGroup string   `json:"managementGroup,omitempty"`
-	EligibleRoles   []string `json:"eligibleRoles"`
+	SubscriptionID   string   `json:"subscriptionId"`
+	DisplayName      string   `json:"displayName"`
+	ManagementGroup  string   `json:"managementGroup,omitempty"`
+	EligibilityScope string   `json:"eligibilityScope,omitempty"`
+	EligibleRoles    []string `json:"eligibleRoles"`
 }
 
 // runSearch lists PIM-eligible subscriptions, optionally filtered by query.
@@ -30,6 +31,10 @@ func runSearchWithErr(ctx context.Context, a *app.App, client ClientAPI, out io.
 	roles, err := client.GetEligibleRoles(ctx)
 	if err != nil {
 		return fmt.Errorf("get eligible roles: %w", err)
+	}
+
+	if a.Config.Output == app.OutputTOML {
+		return runSearchTOML(roles, a, out)
 	}
 
 	subToMG := map[string]string{}
@@ -84,22 +89,23 @@ func runSearchWithErr(ctx context.Context, a *app.App, client ClientAPI, out io.
 // for direct-subscription-scoped roles.
 func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role, subToMG map[string]string, mgFilter string, errOut io.Writer) ([]SearchHit, error) {
 	type acc struct {
-		id      string
-		display string
-		mg      string
-		roles   map[string]struct{}
+		id               string
+		display          string
+		mg               string
+		eligibilityScope string
+		roles            map[string]struct{}
 	}
 	bySub := map[string]*acc{}
 	mgCache := map[string][]azure.Subscription{}
 
-	add := func(subID, display, mg, roleName string) {
+	add := func(subID, display, mg, eligibilityScope, roleName string) {
 		key := strings.ToLower(subID)
 		a, ok := bySub[key]
 		if !ok {
 			if mg == "" {
 				mg = subToMG[key]
 			}
-			a = &acc{id: subID, display: display, mg: mg, roles: map[string]struct{}{}}
+			a = &acc{id: subID, display: display, mg: mg, eligibilityScope: eligibilityScope, roles: map[string]struct{}{}}
 			bySub[key] = a
 		}
 		if a.display == "" {
@@ -108,13 +114,16 @@ func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role, 
 		if a.mg == "" {
 			a.mg = mg
 		}
+		if a.eligibilityScope == "" {
+			a.eligibilityScope = eligibilityScope
+		}
 		a.roles[roleName] = struct{}{}
 	}
 
 	for _, r := range roles {
 		switch r.ScopeKind() {
 		case azure.ScopeSubscription:
-			add(azure.SubscriptionIDFromScope(r.Scope), r.ScopeDisplay, "", r.RoleName)
+			add(azure.SubscriptionIDFromScope(r.Scope), r.ScopeDisplay, "", r.Scope, r.RoleName)
 		case azure.ScopeManagementGroup:
 			mgID := azure.ManagementGroupIDFromScope(r.Scope)
 			if mgFilter != "" {
@@ -149,7 +158,7 @@ func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role, 
 				if parent == "" {
 					parent = mgID
 				}
-				add(s.ID, s.DisplayName, parent, r.RoleName)
+				add(s.ID, s.DisplayName, parent, r.Scope, r.RoleName)
 			}
 		}
 	}
@@ -162,13 +171,86 @@ func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role, 
 		}
 		sort.Strings(names)
 		out = append(out, SearchHit{
-			SubscriptionID:  a.id,
-			DisplayName:     a.display,
-			ManagementGroup: a.mg,
-			EligibleRoles:   names,
+			SubscriptionID:   a.id,
+			DisplayName:      a.display,
+			ManagementGroup:  a.mg,
+			EligibilityScope: a.eligibilityScope,
+			EligibleRoles:    names,
 		})
 	}
 	return out, nil
+}
+
+// favBlock is a single paste-ready favorite entry for --output toml.
+type favBlock struct {
+	displayName      string
+	role             string
+	eligibilityScope string
+}
+
+// runSearchTOML produces [[favorites]] TOML blocks directly from the raw eligible
+// roles list, keyed on eligibility scope (MG or sub ARM path).
+func runSearchTOML(roles []azure.Role, a *app.App, out io.Writer) error {
+	q := strings.TrimSpace(a.Config.SearchQuery)
+	mgf := strings.ToLower(a.Config.MGFilter)
+
+	seen := map[string]struct{}{}
+	var blocks []favBlock
+	for _, r := range roles {
+		switch r.ScopeKind() {
+		case azure.ScopeSubscription, azure.ScopeManagementGroup:
+		default:
+			continue
+		}
+		if q != "" {
+			lower := strings.ToLower(q)
+			if !strings.Contains(strings.ToLower(r.ScopeDisplay), lower) &&
+				!strings.Contains(strings.ToLower(r.Scope), lower) &&
+				!strings.Contains(strings.ToLower(r.RoleName), lower) {
+				continue
+			}
+		}
+		if mgf != "" {
+			if !strings.Contains(strings.ToLower(r.Scope), mgf) &&
+				!strings.Contains(strings.ToLower(r.ScopeDisplay), mgf) {
+				continue
+			}
+		}
+		key := strings.ToLower(r.RoleName) + "|" + strings.ToLower(r.Scope)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		blocks = append(blocks, favBlock{
+			displayName:      r.ScopeDisplay,
+			role:             r.RoleName,
+			eligibilityScope: r.Scope,
+		})
+	}
+	sort.Slice(blocks, func(i, j int) bool {
+		if blocks[i].displayName != blocks[j].displayName {
+			return blocks[i].displayName < blocks[j].displayName
+		}
+		return blocks[i].role < blocks[j].role
+	})
+	return tomlOut(blocks, out)
+}
+
+// tomlOut writes paste-ready [[favorites]] TOML blocks to out.
+func tomlOut(blocks []favBlock, out io.Writer) error {
+	for i, b := range blocks {
+		if i > 0 {
+			fmt.Fprintln(out)
+		}
+		fmt.Fprintf(out, "[[favorites]]\n")
+		fmt.Fprintf(out, "label         = %q\n", b.role+" @ "+b.displayName)
+		fmt.Fprintf(out, "role          = %q\n", b.role)
+		fmt.Fprintf(out, "scope         = %q\n", b.eligibilityScope)
+		fmt.Fprintf(out, "duration      = \"1h\"\n")
+		fmt.Fprintf(out, "justification = \"\"\n")
+		fmt.Fprintf(out, "key           = 0\n")
+	}
+	return nil
 }
 
 // filterSearchHits applies exact-first / substring-fallback on SubscriptionID
