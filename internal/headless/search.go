@@ -33,10 +33,6 @@ func runSearchWithErr(ctx context.Context, a *app.App, client ClientAPI, out io.
 		return fmt.Errorf("get eligible roles: %w", err)
 	}
 
-	if a.Config.Output == app.OutputTOML {
-		return runSearchTOML(roles, a, out)
-	}
-
 	subToMG := map[string]string{}
 
 	hits, err := buildSearchHits(ctx, client, roles, subToMG, a.Config.MGFilter, errOut)
@@ -60,6 +56,10 @@ func runSearchWithErr(ctx context.Context, a *app.App, client ClientAPI, out io.
 			hits = []SearchHit{}
 		}
 		return jsonOut(hits, out)
+	}
+
+	if a.Config.Output == app.OutputTOML {
+		return tomlFromHits(hits, roles, out)
 	}
 
 	if len(hits) == 0 {
@@ -188,45 +188,83 @@ type favBlock struct {
 	eligibilityScope string
 }
 
-// runSearchTOML produces [[favorites]] TOML blocks directly from the raw eligible
-// roles list, keyed on eligibility scope (MG or sub ARM path).
-func runSearchTOML(roles []azure.Role, a *app.App, out io.Writer) error {
-	q := strings.TrimSpace(a.Config.SearchQuery)
-	mgf := strings.ToLower(a.Config.MGFilter)
+// tomlFromHits emits one [[favorites]] block per (subscription, role) pair.
+// For MG-inherited roles the scope is the MG ARM path; for subscription-direct
+// roles it is the subscription ARM path. hits carries the query-filtered
+// subscription set; roles is the full raw eligible list used to recover the
+// per-role eligibility scope.
+func tomlFromHits(hits []SearchHit, roles []azure.Role, out io.Writer) error {
+	// Build a set of matched subscription IDs from the filtered hits.
+	matched := make(map[string]struct{}, len(hits))
+	subDisplay := make(map[string]string, len(hits))
+	for _, h := range hits {
+		key := strings.ToLower(h.SubscriptionID)
+		matched[key] = struct{}{}
+		subDisplay[key] = h.DisplayName
+	}
+	if len(matched) == 0 {
+		return nil
+	}
+
+	// For MG-scoped roles we need to know which matched subscriptions fall under each MG.
+	// h.ManagementGroup is the MG ID (set by buildSearchHits from ManagementGroupIDFromScope).
+	mgToMatchedSubs := make(map[string][]string)
+	for _, h := range hits {
+		if h.ManagementGroup != "" {
+			mgKey := strings.ToLower(h.ManagementGroup)
+			mgToMatchedSubs[mgKey] = append(mgToMatchedSubs[mgKey], h.SubscriptionID)
+		}
+	}
 
 	seen := map[string]struct{}{}
 	var blocks []favBlock
+
 	for _, r := range roles {
 		switch r.ScopeKind() {
-		case azure.ScopeSubscription, azure.ScopeManagementGroup:
-		default:
-			continue
-		}
-		if mgf != "" {
-			if !strings.Contains(strings.ToLower(r.Scope), mgf) &&
-				!strings.Contains(strings.ToLower(r.ScopeDisplay), mgf) {
+		case azure.ScopeSubscription:
+			subID := strings.ToLower(azure.SubscriptionIDFromScope(r.Scope))
+			if _, ok := matched[subID]; !ok {
 				continue
 			}
-		}
-		if q != "" && r.ScopeKind() == azure.ScopeSubscription {
-			lower := strings.ToLower(q)
-			if !strings.Contains(strings.ToLower(r.ScopeDisplay), lower) &&
-				!strings.Contains(strings.ToLower(r.Scope), lower) &&
-				!strings.Contains(strings.ToLower(r.RoleName), lower) {
+			key := strings.ToLower(r.RoleName) + "|" + strings.ToLower(r.Scope)
+			if _, ok := seen[key]; ok {
 				continue
 			}
+			seen[key] = struct{}{}
+			display := subDisplay[subID]
+			if display == "" {
+				display = r.ScopeDisplay
+			}
+			blocks = append(blocks, favBlock{
+				displayName:      display,
+				role:             r.RoleName,
+				eligibilityScope: r.Scope,
+			})
+
+		case azure.ScopeManagementGroup:
+			mgID := strings.ToLower(azure.ManagementGroupIDFromScope(r.Scope))
+			subs, ok := mgToMatchedSubs[mgID]
+			if !ok {
+				continue
+			}
+			key := strings.ToLower(r.RoleName) + "|" + strings.ToLower(r.Scope)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			// Use first matched sub's display name as the label.
+			display := subDisplay[strings.ToLower(subs[0])]
+			if display == "" {
+				display = r.ScopeDisplay
+			}
+			blocks = append(blocks, favBlock{
+				displayName:      display,
+				role:             r.RoleName,
+				eligibilityScope: r.Scope,
+			})
 		}
-		key := strings.ToLower(r.RoleName) + "|" + strings.ToLower(r.Scope)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		blocks = append(blocks, favBlock{
-			displayName:      r.ScopeDisplay,
-			role:             r.RoleName,
-			eligibilityScope: r.Scope,
-		})
 	}
+
 	sort.Slice(blocks, func(i, j int) bool {
 		if blocks[i].displayName != blocks[j].displayName {
 			return blocks[i].displayName < blocks[j].displayName

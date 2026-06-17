@@ -863,19 +863,33 @@ func TestRunSearchTOMLOutput(t *testing.T) {
 				ScopeDisplay: "My MG",
 			},
 		},
+		// The MG contains my-subscription, so Reader must appear in TOML output.
+		mgSubs: map[string][]azure.Subscription{
+			"my-mgmt-group": {
+				{ID: "00000000-0000-0000-0000-000000000000", DisplayName: "my-subscription"},
+			},
+		},
 	}
 	var buf strings.Builder
 	if err := runSearch(t.Context(), makeApp("", app.OutputTOML), mock, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
+
+	// Sub-direct role: scope = subscription ARM path.
 	if !strings.Contains(out, `scope         = "/subscriptions/00000000-0000-0000-0000-000000000000"`) {
 		t.Errorf("expected sub ARM path in TOML output, got:\n%s", out)
 	}
+	// MG role: scope = MG ARM path for deterministic activation.
 	if !strings.Contains(out, `scope         = "/providers/Microsoft.Management/managementGroups/my-mgmt-group"`) {
 		t.Errorf("expected MG ARM path in TOML output, got:\n%s", out)
 	}
-	if !strings.Contains(out, `role          = "Reader"`) {
-		t.Errorf("expected Reader role in TOML output, got:\n%s", out)
+	// MG role label uses the subscription display name, not the MG display name.
+	if !strings.Contains(out, `label         = "Reader @ my-subscription"`) {
+		t.Errorf("expected subscription-name label for MG role, got:\n%s", out)
+	}
+	// Regression guard: exactly two [[favorites]] blocks.
+	if got := strings.Count(out, "[[favorites]]"); got != 2 {
+		t.Errorf("expected 2 [[favorites]] blocks, got %d:\n%s", got, out)
 	}
 }
