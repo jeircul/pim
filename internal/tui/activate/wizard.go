@@ -1,7 +1,6 @@
 package activate
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -44,20 +43,10 @@ type Deps struct {
 	LoadSubs    func(mgID string) ([]azure.ManagementGroup, []azure.Subscription, error)
 	LoadRGs     func(subID string) ([]azure.ResourceGroup, error)
 	Activate    func(role azure.Role, principalID, justification string, minutes int, targetScope string) error
-	// ResolveMGSub reports whether a subscription GUID is reachable under the given MG.
-	ResolveMGSub func(ctx context.Context, mgID, subGUID string) (bool, error)
 }
 
 // autoConfirmMsg triggers auto-submission on the confirm step (--yes flag).
 type autoConfirmMsg struct{}
-
-// mgScopeResolveMsg carries the result of async MG-membership resolution.
-// fallback holds the original candidates to use when resolution errors on all MGs.
-type mgScopeResolveMsg struct {
-	selected []azure.Role
-	fallback []azure.Role
-	err      error
-}
 
 // Wizard is the root model for the 4-step activation flow.
 type Wizard struct {
@@ -86,7 +75,7 @@ type Wizard struct {
 // New creates a Wizard. Call Init() to start.
 func New(theme styles.Theme, keys styles.KeyMap, deps Deps) Wizard {
 	w := Wizard{theme: theme, keys: keys, deps: deps}
-	w.roleList = NewRoleList(theme, keys, deps.LoadActive, deps.RoleFilter, deps.ScopeFilter, deps.LoadRoles, deps.ResolveMGSub)
+	w.roleList = NewRoleList(theme, keys, deps.LoadActive, deps.RoleFilter, deps.ScopeFilter, deps.LoadRoles)
 	return w
 }
 
@@ -175,23 +164,6 @@ func (w Wizard) Update(msg tea.Msg) (Wizard, tea.Cmd) {
 
 	case autoConfirmMsg:
 		return w.handleAutoConfirm()
-
-	case mgScopeResolveMsg:
-		switch {
-		case len(msg.selected) > 0:
-			// At least one MG verified — advance with verified set.
-			w.selectedRoles = msg.selected
-			return w.advanceFromRoles()
-		case len(msg.fallback) == 1:
-			// All resolution attempts errored (e.g. MG API timeout) but exactly
-			// one candidate exists — trust the user's configured scope and advance.
-			w.selectedRoles = msg.fallback
-			return w.advanceFromRoles()
-		default:
-			// Ambiguous or unresolvable — drop Silent and show the role list.
-			w.deps.Silent = false
-			return w, nil
-		}
 	}
 
 	// Delegate to active step first so sub-models (e.g. filter mode in rolelist)
@@ -366,8 +338,8 @@ func (w Wizard) advanceFromRoles() (Wizard, tea.Cmd) {
 // ARM child path, or the role's own scope when the filter matches by display
 // name substring. For MG-scoped roles with a subscription/RG filter, the
 // filter is trusted only when this role is the sole MG-scoped selection —
-// async resolution via ResolveMGSub has already verified membership at that
-// point (or the user made an unambiguous manual pick). Returns "" otherwise.
+// the sole MG-scoped selection is trusted as the configured scope; Azure
+// rejects a wrong-MG activation with 400/403. Returns "" otherwise.
 func (w Wizard) scopeOverride(r azure.Role) string {
 	for _, s := range w.deps.ScopeFilter {
 		s = strings.TrimSpace(s)

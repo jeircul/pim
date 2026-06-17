@@ -358,11 +358,6 @@ func (m *AppModel) startWizard(fav *state.Favorite, autoSubmit bool) tea.Cmd {
 			_, err := client.ActivateRole(callCtx, role, pid, justification, minutes, targetScope)
 			return err
 		},
-		ResolveMGSub: func(resolveCtx context.Context, mgID, subGUID string) (bool, error) {
-			callCtx, callCancel := context.WithTimeout(resolveCtx, 60*time.Second)
-			defer callCancel()
-			return client.SubscriptionUnderMG(callCtx, mgID, subGUID)
-		},
 	}
 
 	if fav != nil && fav.Justification != "" && deps.Justific == "" {

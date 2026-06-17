@@ -149,29 +149,6 @@ func (c *Client) ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) (
 	return subs, parents, warnings, err
 }
 
-// SubscriptionUnderMG reports whether subGUID is reachable under mgID.
-// Uses a single eligibleChildResources call with $getAllChildren=true rather
-// than a full recursive BFS — one HTTP round-trip per candidate MG.
-// Returns (false, nil) when the GUID is not found — that is not an error.
-func (c *Client) SubscriptionUnderMG(ctx context.Context, mgID, subGUID string) (bool, error) {
-	tok, err := c.armToken(ctx)
-	if err != nil {
-		return false, fmt.Errorf("acquire ARM token: %w", err)
-	}
-	scope := fmt.Sprintf("/providers/Microsoft.Management/managementGroups/%s", url.PathEscape(mgID))
-	resources, err := c.fetchEligibleChildResourcesWithToken(ctx, scope, tok)
-	if err != nil {
-		return false, fmt.Errorf("eligible child resources for %s: %w", mgID, err)
-	}
-	lower := strings.ToLower(subGUID)
-	for _, r := range resources {
-		if strings.ToLower(SubscriptionIDFromScope(r.ID)) == lower {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
 func (c *Client) listManagementGroupChildrenWithToken(ctx context.Context, mgID, token string) ([]ManagementGroup, []Subscription, error) {
 	mgID = strings.TrimSpace(mgID)
 	if mgID == "" {

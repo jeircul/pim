@@ -1,7 +1,6 @@
 package activate
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -35,9 +34,8 @@ type RoleList struct {
 	loadFunc     func() ([]azure.Role, error)
 	loadActiveFn func() ([]azure.ActiveAssignment, error)
 	// roleFilter auto-advances when a single --role flag match is found
-	roleFilter   []string
-	scopeFilter  []string
-	resolveMGSub func(ctx context.Context, mgID, subGUID string) (bool, error)
+	roleFilter  []string
+	scopeFilter []string
 }
 
 // NewRoleList creates a RoleList model.
@@ -48,7 +46,6 @@ func NewRoleList(
 	roleFilter []string,
 	scopeFilter []string,
 	loadFunc func() ([]azure.Role, error),
-	resolveMGSub func(ctx context.Context, mgID, subGUID string) (bool, error),
 ) RoleList {
 	return RoleList{
 		theme:        theme,
@@ -60,7 +57,6 @@ func NewRoleList(
 		loadActiveFn: loadActive,
 		roleFilter:   roleFilter,
 		scopeFilter:  scopeFilter,
-		resolveMGSub: resolveMGSub,
 	}
 }
 
@@ -236,51 +232,24 @@ func (m *RoleList) autoAdvance() tea.Cmd {
 			r := narrowed[0]
 			return func() tea.Msg { return RoleListDoneMsg{Selected: []azure.Role{r}} }
 		}
-		// If unresolved and all remaining matches are MG-scoped with a subscription GUID
-		// filter, fire async membership resolution via ResolveMGSub.
-		if m.resolveMGSub != nil {
-			guid := ""
-			for _, sf := range m.scopeFilter {
-				if g := azure.BareSubscriptionGUID(sf); g != "" {
-					guid = g
+		guid := ""
+		for _, sf := range m.scopeFilter {
+			if g := azure.BareSubscriptionGUID(sf); g != "" {
+				guid = g
+				break
+			}
+		}
+		if guid != "" {
+			allMG := true
+			for _, r := range matches {
+				if !azure.IsManagementGroupScope(r.Scope) {
+					allMG = false
 					break
 				}
 			}
-			if guid != "" {
-				allMG := true
-				for _, r := range matches {
-					if !azure.IsManagementGroupScope(r.Scope) {
-						allMG = false
-						break
-					}
-				}
-				if allMG {
-					candidates := matches
-					resolveFn := m.resolveMGSub
-					return func() tea.Msg {
-						var verified []azure.Role
-						allErrored := true
-						for _, r := range candidates {
-							mgID := azure.ManagementGroupIDFromScope(r.Scope)
-							ok, err := resolveFn(context.Background(), mgID, guid)
-							if err != nil {
-								// This MG's API timed out — skip it, don't abort.
-								continue
-							}
-							allErrored = false
-							if ok {
-								verified = append(verified, r)
-							}
-						}
-						// If every MG call errored (all timed out), pass candidates as
-						// fallback so the wizard can trust the user's configured scope
-						// when only one candidate exists.
-						if allErrored {
-							return mgScopeResolveMsg{fallback: candidates}
-						}
-						return mgScopeResolveMsg{selected: verified}
-					}
-				}
+			if allMG {
+				r := matches[0]
+				return func() tea.Msg { return RoleListDoneMsg{Selected: []azure.Role{r}} }
 			}
 		}
 	}
