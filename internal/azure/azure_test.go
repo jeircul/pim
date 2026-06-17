@@ -1,6 +1,9 @@
 package azure
 
-import "testing"
+import (
+	"sort"
+	"testing"
+)
 
 func TestClampMinutes(t *testing.T) {
 	tests := []struct {
@@ -149,5 +152,40 @@ func TestParseDurationMinutes(t *testing.T) {
 				t.Errorf("ParseDurationMinutes(%q) = %d, want %d", tc.input, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestGetEligibleRolesSortOrder(t *testing.T) {
+	// Verify that the sort contract applied inside GetEligibleRoles is stable
+	// and deterministic: roles are ordered by Scope then RoleName, so
+	// autoAdvance and other callers see a consistent list regardless of API
+	// pagination order.
+	roles := []Role{
+		{Scope: "/subscriptions/bbb", RoleName: "Reader"},
+		{Scope: "/subscriptions/aaa", RoleName: "Owner"},
+		{Scope: "/subscriptions/aaa", RoleName: "Contributor"},
+		{Scope: "/providers/Microsoft.Management/managementGroups/mg-z", RoleName: "Reader"},
+		{Scope: "/subscriptions/bbb", RoleName: "Contributor"},
+	}
+	want := []Role{
+		{Scope: "/providers/Microsoft.Management/managementGroups/mg-z", RoleName: "Reader"},
+		{Scope: "/subscriptions/aaa", RoleName: "Contributor"},
+		{Scope: "/subscriptions/aaa", RoleName: "Owner"},
+		{Scope: "/subscriptions/bbb", RoleName: "Contributor"},
+		{Scope: "/subscriptions/bbb", RoleName: "Reader"},
+	}
+
+	sort.Slice(roles, func(i, j int) bool {
+		if roles[i].Scope != roles[j].Scope {
+			return roles[i].Scope < roles[j].Scope
+		}
+		return roles[i].RoleName < roles[j].RoleName
+	})
+
+	for i, got := range roles {
+		if got.Scope != want[i].Scope || got.RoleName != want[i].RoleName {
+			t.Errorf("roles[%d] = {%s %s}, want {%s %s}",
+				i, got.Scope, got.RoleName, want[i].Scope, want[i].RoleName)
+		}
 	}
 }

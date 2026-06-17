@@ -76,6 +76,27 @@ func TestAutoAdvance(t *testing.T) {
 			wantNil:     false,
 			wantRole:    roleD,
 		},
+		{
+			name: "two MG-scoped matches with bare sub GUID returns nil — cannot resolve owning MG without API",
+			roles: []azure.Role{
+				{RoleName: "Contributor", Scope: "/providers/Microsoft.Management/managementGroups/mg-a"},
+				{RoleName: "Contributor", Scope: "/providers/Microsoft.Management/managementGroups/mg-b"},
+			},
+			roleFilter:  []string{"Contributor"},
+			scopeFilter: []string{"00000000-0000-0000-0000-000000000000"},
+			wantNil:     true,
+		},
+		{
+			name: "one MG-scoped match with bare sub GUID emits the role",
+			roles: []azure.Role{
+				{RoleName: "Contributor", Scope: "/providers/Microsoft.Management/managementGroups/mg-a"},
+				{RoleName: "Reader", Scope: "/providers/Microsoft.Management/managementGroups/mg-b"},
+			},
+			roleFilter:  []string{"Contributor"},
+			scopeFilter: []string{"00000000-0000-0000-0000-000000000000"},
+			wantNil:     false,
+			wantRole:    azure.Role{RoleName: "Contributor", Scope: "/providers/Microsoft.Management/managementGroups/mg-a"},
+		},
 	}
 
 	for _, tc := range tests {

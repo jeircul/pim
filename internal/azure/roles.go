@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 )
 
 // GetCurrentUser fetches the current user from Microsoft Graph.
@@ -80,6 +81,12 @@ func (c *Client) GetEligibleRoles(ctx context.Context) ([]Role, error) {
 		}
 		reqURL = result.NextLink
 	}
+	sort.Slice(roles, func(i, j int) bool {
+		if roles[i].Scope != roles[j].Scope {
+			return roles[i].Scope < roles[j].Scope
+		}
+		return roles[i].RoleName < roles[j].RoleName
+	})
 	return roles, nil
 }
 
