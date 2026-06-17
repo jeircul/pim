@@ -111,7 +111,16 @@ Full API reference: `.agents/skills/golang/references/azure-pim-api.md`.
 - Dashboard 1–9 shortcut: if `Complete()` → `startWizard` with `AutoSubmit=true` and `favoritePending=true`; activation result shown as dashboard notice, TUI stays open. If not `Complete()` → error notice, no activation.
 - `favoritePending` on `AppModel` distinguishes favorite-triggered activations (return to dashboard) from manual wizard activations (quit with summary).
 - Favorites screen `ActivateMsg` always opens the wizard (incomplete favorites stop at the missing step).
-- `autoAdvance` in `rolelist.go` uses `scopeFilter` as a tiebreaker when multiple roles share the same name — emits only when exactly one scope match survives.
+- `autoAdvance` in `rolelist.go` uses `scopeFilter` as a tiebreaker when multiple roles share the same name. When all matches are MG-scoped and the filter is a bare subscription GUID, the first match is trusted (Azure rejects wrong-scope activations with 400/403). `scopeOverride` pins the subscription as `targetScope` when exactly one MG-scoped role is selected.
+- `RecentActivation.EligibilityScope` stores the ARM eligibility path at activation time. Re-activation from the Recent screen prefers this over `Scope` so the wizard matches the original role precisely.
+- `pim search --output toml` generates paste-ready `[[favorites]]` blocks with `scope = /subscriptions/<guid>`. This is the recommended workflow for building `config.toml`.
+
+## Recent behaviour
+
+- `R` from the dashboard opens the recent activations screen (last 10 successful activations).
+- Each entry stores `Role`, `Scope` (resolved target), `EligibilityScope` (ARM eligibility path), `Duration`, `Justification`, `ActivatedAt`.
+- Pressing Enter builds a `Favorite` using `EligibilityScope` as `Scope` when non-empty, falling back to `Scope`. This ensures re-activation is as precise as the original.
+- Populated from both TUI (`ConfirmDoneMsg`) and headless (`AddRecentActivation` in `run.go`) success paths only — failed activations are never recorded.
 
 ## Skills
 

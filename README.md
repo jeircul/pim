@@ -56,9 +56,6 @@ pim activate --role Reader --scope my-subscription
 # Bare subscription GUID expands to /subscriptions/<guid>
 pim activate --role Reader --scope 00000000-0000-0000-0000-000000000000
 
-# MG ARM path — most precise; matches exactly when role is inherited from an MG
-pim activate --role Contributor --scope /providers/Microsoft.Management/managementGroups/my-mgmt-group -t 1h -j "testing" --yes
-
 # Auto-submit with no TUI interaction
 pim activate \
   --role Reader \
@@ -67,6 +64,8 @@ pim activate \
   --justification "Investigating alert" \
   --yes
 ```
+
+Use the subscription GUID from `pim search` as `--scope` for headless activation. `pim search --output toml` emits the correct subscription ARM path for favorites.
 
 ### 🤖 Headless mode (scripting / CI)
 
@@ -105,7 +104,7 @@ pim search --output json            # machine-readable
 pim search --output toml            # paste-ready [[favorites]] blocks
 ```
 
-The `--output toml` format produces one `[[favorites]]` block per eligible role, with `scope` set to the ARM eligibility path — the most precise value to use in `config.toml`.
+The `--output toml` format produces one `[[favorites]]` block per eligible role, with `scope` set to the subscription ARM path (`/subscriptions/<guid>`).
 
 ### 🔍 Matching policy for `--role` and `--scope`
 
@@ -159,21 +158,18 @@ Example `config.toml`:
 
 ```toml
 [preferences]
-default_duration = "2h"   # default when no --time flag or favorite duration is set
+default_duration = "2h"
 
-# Precise form: scope = MG ARM path (recommended for roles inherited from a management group)
-# Copy from: pim search --output toml
 [[favorites]]
 label         = "Contributor @ my-subscription"
 role          = "Contributor"
-scope         = "/providers/Microsoft.Management/managementGroups/my-mgmt-group"
+scope         = "/subscriptions/00000000-0000-0000-0000-000000000000"
 duration      = "1h"
 justification = "Daily access"
 key           = 1
 
-# Simple form: scope = bare subscription GUID (works when the role is eligible directly at the subscription)
 [[favorites]]
-label         = "Reader @ my-other-subscription"
+label         = "Reader @ my-subscription"
 role          = "Reader"
 scope         = "00000000-0000-0000-0000-000000000000"
 duration      = "2h"
@@ -181,7 +177,7 @@ justification = "Read-only investigation"
 key           = 2
 ```
 
-**Which form to use:** Run `pim search --output toml` to get the exact `scope` value for any role. If the MANAGEMENT GROUP column in `pim search` shows a name (not `(direct)`), the role is inherited from an MG — use the MG ARM path as `scope`. If it shows `(direct)`, the subscription GUID is sufficient.
+**Which form to use:** Run `pim search --output toml` to get a paste-ready `[[favorites]]` block for any eligible role. The `scope` field is always a subscription ARM path (`/subscriptions/<guid>`) — safe to use verbatim. Fill in `justification`, `duration`, and `key`, then paste into `config.toml`.
 
 `label` is required. When `role`, `scope`, `duration`, and `justification` are all set, pressing the shortcut key activates immediately with no prompts and returns to the dashboard with a result notice. If any field is missing the shortcut shows an error notice — open the favorite in the favorites editor (`f`) and activate from there; the wizard will stop at the first missing field.
 

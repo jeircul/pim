@@ -101,6 +101,10 @@ client.DeactivateRole(assignment ActiveAssignment, principalID string) (*Schedul
 
 // Client has NO User field — call GetCurrentUser() once at startup.
 // Always call ensureTokens() (internal) before HTTP; tokens are lazy-fetched.
+// Scope matching precedence for favorites/headless:
+// 1. ARM exact match: ScopeIsChildOf(expanded, role.Scope) — fastest, deterministic
+// 2. MG-trust (TUI only): subscription filter vs MG-scoped role — first match, Azure rejects wrong scope
+// Use pim search --output toml to get scope = /subscriptions/<guid> for any role.
 ```
 
 ## Testing
