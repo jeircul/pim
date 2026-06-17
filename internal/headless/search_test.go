@@ -880,9 +880,10 @@ func TestRunSearchTOMLOutput(t *testing.T) {
 	if !strings.Contains(out, `scope         = "/subscriptions/00000000-0000-0000-0000-000000000000"`) {
 		t.Errorf("expected sub ARM path in TOML output, got:\n%s", out)
 	}
-	// MG role: scope = MG ARM path for deterministic activation.
-	if !strings.Contains(out, `scope         = "/providers/Microsoft.Management/managementGroups/my-mgmt-group"`) {
-		t.Errorf("expected MG ARM path in TOML output, got:\n%s", out)
+	// MG role: scope = subscription ARM path so activation targets the specific
+	// subscription, not the entire MG.
+	if !strings.Contains(out, `scope         = "/subscriptions/00000000-0000-0000-0000-000000000000"`) {
+		t.Errorf("expected sub ARM path for MG role in TOML output, got:\n%s", out)
 	}
 	// MG role label uses the subscription display name, not the MG display name.
 	if !strings.Contains(out, `label         = "Reader @ my-subscription"`) {
@@ -929,8 +930,8 @@ func TestTomlFromHitsParentChildMG(t *testing.T) {
 			t.Errorf("expected role %q in TOML output:\n%s", role, out)
 		}
 	}
-	if !strings.Contains(out, `scope         = "`+mgScope+`"`) {
-		t.Errorf("expected MG ARM path scope in TOML output:\n%s", out)
+	if !strings.Contains(out, `scope         = "/subscriptions/00000000-0000-0000-0000-000000000000"`) {
+		t.Errorf("expected subscription scope (not MG scope) in TOML output:\n%s", out)
 	}
 	if !strings.Contains(out, `label         = "Reader @ my-subscription"`) {
 		t.Errorf("expected subscription-name label for MG role:\n%s", out)

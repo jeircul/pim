@@ -255,21 +255,26 @@ func tomlFromHits(hits []SearchHit, roles []azure.Role, out io.Writer) error {
 			if !ok {
 				continue
 			}
-			key := strings.ToLower(r.RoleName) + "|" + strings.ToLower(r.Scope)
-			if _, ok := seen[key]; ok {
-				continue
+			// Emit one block per matched subscription under this MG.
+			// scope = /subscriptions/<guid> so the activation targets that
+			// specific subscription, not the entire MG.
+			for _, subID := range subs {
+				subScope := "/subscriptions/" + subID
+				key := strings.ToLower(r.RoleName) + "|" + strings.ToLower(subScope)
+				if _, ok := seen[key]; ok {
+					continue
+				}
+				seen[key] = struct{}{}
+				display := subDisplay[strings.ToLower(subID)]
+				if display == "" {
+					display = r.ScopeDisplay
+				}
+				blocks = append(blocks, favBlock{
+					displayName:      display,
+					role:             r.RoleName,
+					eligibilityScope: subScope,
+				})
 			}
-			seen[key] = struct{}{}
-			// Use first matched sub's display name as the label.
-			display := subDisplay[strings.ToLower(subs[0])]
-			if display == "" {
-				display = r.ScopeDisplay
-			}
-			blocks = append(blocks, favBlock{
-				displayName:      display,
-				role:             r.RoleName,
-				eligibilityScope: r.Scope,
-			})
 		}
 	}
 
