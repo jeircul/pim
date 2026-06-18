@@ -27,6 +27,7 @@ type Favorite struct {
 	Duration         string `toml:"duration"`
 	Justification    string `toml:"justification"`
 	EligibilityScope string `toml:"eligibility_scope,omitempty"`
+	ScheduleID       string `toml:"schedule_id,omitempty"`
 	Key              int    `toml:"key"`
 }
 
@@ -59,6 +60,7 @@ type RecentActivation struct {
 	Scope            string    `toml:"scope"`
 	ScopeDisplay     string    `toml:"scope_display"`
 	EligibilityScope string    `toml:"eligibility_scope,omitempty"`
+	ScheduleID       string    `toml:"schedule_id,omitempty"`
 	Duration         string    `toml:"duration"`
 	Justification    string    `toml:"justification"`
 	ActivatedAt      time.Time `toml:"activated_at"`

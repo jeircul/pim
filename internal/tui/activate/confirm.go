@@ -16,6 +16,7 @@ type Result struct {
 	RoleName         string
 	Scope            string
 	EligibilityScope string
+	ScheduleID       string
 	Err              error
 }
 
@@ -167,6 +168,7 @@ func (m *Confirm) collectResults() []Result {
 			RoleName:         it.role.RoleName,
 			Scope:            scope,
 			EligibilityScope: it.role.Scope,
+			ScheduleID:       it.role.EligibilityScheduleID,
 			Err:              it.err,
 		})
 	}

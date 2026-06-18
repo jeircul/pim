@@ -187,6 +187,7 @@ type favBlock struct {
 	role             string
 	eligibilityScope string // /subscriptions/<guid> — activation target
 	mgEligibility    string // MG ARM path — for config eligibility_scope field; empty for sub-direct roles
+	scheduleID       string
 }
 
 // tomlFromHits emits one [[favorites]] block per (subscription, role) pair.
@@ -248,6 +249,7 @@ func tomlFromHits(hits []SearchHit, roles []azure.Role, out io.Writer) error {
 				displayName:      display,
 				role:             r.RoleName,
 				eligibilityScope: r.Scope,
+				scheduleID:       r.EligibilityScheduleID,
 			})
 
 		case azure.ScopeManagementGroup:
@@ -275,6 +277,7 @@ func tomlFromHits(hits []SearchHit, roles []azure.Role, out io.Writer) error {
 					role:             r.RoleName,
 					eligibilityScope: subScope,
 					mgEligibility:    r.Scope,
+					scheduleID:       r.EligibilityScheduleID,
 				})
 			}
 		}
@@ -301,6 +304,9 @@ func tomlOut(blocks []favBlock, out io.Writer) error {
 		fmt.Fprintf(out, "scope         = %q\n", b.eligibilityScope)
 		if b.mgEligibility != "" {
 			fmt.Fprintf(out, "eligibility_scope = %q\n", b.mgEligibility)
+		}
+		if b.scheduleID != "" {
+			fmt.Fprintf(out, "schedule_id   = %q\n", b.scheduleID)
 		}
 		fmt.Fprintf(out, "duration      = \"1h\"\n")
 		fmt.Fprintf(out, "justification = \"\"\n")

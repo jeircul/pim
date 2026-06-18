@@ -366,6 +366,9 @@ func (m *AppModel) startWizard(fav *state.Favorite, autoSubmit bool) tea.Cmd {
 	if fav != nil && fav.EligibilityScope != "" {
 		deps.EligibilityScope = fav.EligibilityScope
 	}
+	if fav != nil && fav.ScheduleID != "" {
+		deps.ScheduleID = fav.ScheduleID
+	}
 	if autoSubmit {
 		deps.AutoSubmit = true
 		deps.Silent = true

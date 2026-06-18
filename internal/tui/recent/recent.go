@@ -66,11 +66,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					reactivateScope = a.Scope
 				}
 				fav := state.Favorite{
-					Label:         a.Role + " @ " + scopeLabel,
-					Role:          a.Role,
-					Scope:         reactivateScope,
-					Duration:      a.Duration,
-					Justification: a.Justification,
+					Label:            a.Role + " @ " + scopeLabel,
+					Role:             a.Role,
+					Scope:            reactivateScope,
+					EligibilityScope: a.EligibilityScope,
+					ScheduleID:       a.ScheduleID,
+					Duration:         a.Duration,
+					Justification:    a.Justification,
 				}
 				return m, func() tea.Msg { return ActivateMsg{Favorite: fav} }
 			}

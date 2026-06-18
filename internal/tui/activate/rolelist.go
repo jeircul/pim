@@ -37,6 +37,7 @@ type RoleList struct {
 	roleFilter       []string
 	scopeFilter      []string
 	eligibilityScope string
+	scheduleID       string
 }
 
 // NewRoleList creates a RoleList model.
@@ -48,6 +49,7 @@ func NewRoleList(
 	scopeFilter []string,
 	loadFunc func() ([]azure.Role, error),
 	eligibilityScope string,
+	scheduleID string,
 ) RoleList {
 	return RoleList{
 		theme:            theme,
@@ -60,6 +62,7 @@ func NewRoleList(
 		roleFilter:       roleFilter,
 		scopeFilter:      scopeFilter,
 		eligibilityScope: eligibilityScope,
+		scheduleID:       scheduleID,
 	}
 }
 
@@ -203,6 +206,14 @@ func (m *RoleList) applyFilter() {
 // autoAdvance returns a cmd that immediately selects a role when exactly one
 // --role flag match is found in the visible list, skipping manual selection.
 func (m *RoleList) autoAdvance() tea.Cmd {
+	if m.scheduleID != "" {
+		for _, r := range m.roles {
+			if strings.EqualFold(r.EligibilityScheduleID, m.scheduleID) {
+				role := r
+				return func() tea.Msg { return RoleListDoneMsg{Selected: []azure.Role{role}} }
+			}
+		}
+	}
 	if len(m.roleFilter) == 0 {
 		return nil
 	}

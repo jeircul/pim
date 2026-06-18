@@ -44,6 +44,7 @@ type Deps struct {
 	LoadRGs          func(subID string) ([]azure.ResourceGroup, error)
 	Activate         func(role azure.Role, principalID, justification string, minutes int, targetScope string) error
 	EligibilityScope string
+	ScheduleID       string
 }
 
 // autoConfirmMsg triggers auto-submission on the confirm step (--yes flag).
@@ -76,7 +77,7 @@ type Wizard struct {
 // New creates a Wizard. Call Init() to start.
 func New(theme styles.Theme, keys styles.KeyMap, deps Deps) Wizard {
 	w := Wizard{theme: theme, keys: keys, deps: deps}
-	w.roleList = NewRoleList(theme, keys, deps.LoadActive, deps.RoleFilter, deps.ScopeFilter, deps.LoadRoles, deps.EligibilityScope)
+	w.roleList = NewRoleList(theme, keys, deps.LoadActive, deps.RoleFilter, deps.ScopeFilter, deps.LoadRoles, deps.EligibilityScope, deps.ScheduleID)
 	return w
 }
 
@@ -155,6 +156,7 @@ func (w Wizard) Update(msg tea.Msg) (Wizard, tea.Cmd) {
 				Scope:            r.Scope,
 				ScopeDisplay:     azure.DefaultScopeDisplay(r.Scope, ""),
 				EligibilityScope: r.EligibilityScope,
+				ScheduleID:       r.ScheduleID,
 				Duration:         azure.FormatDuration(w.lastMinutes),
 				Justification:    w.lastJustification,
 				ActivatedAt:      time.Now(),

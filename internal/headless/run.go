@@ -163,6 +163,7 @@ func runActivate(ctx context.Context, a *app.App, client ClientAPI, user *azure.
 			Scope:            scope,
 			ScopeDisplay:     azure.DefaultScopeDisplay(scope, ""),
 			EligibilityScope: match.role.Scope,
+			ScheduleID:       match.role.EligibilityScheduleID,
 			Duration:         timeStr,
 			Justification:    cfg.Justification,
 			ActivatedAt:      time.Now(),
