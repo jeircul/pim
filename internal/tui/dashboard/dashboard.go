@@ -139,6 +139,8 @@ func (m Model) View() string {
 		m.keys.Activate,
 		m.keys.Status,
 		m.keys.Deactivate,
+		m.keys.Favorites,
+		m.keys.Recent,
 		m.keys.Quit,
 	}
 	extra := ""

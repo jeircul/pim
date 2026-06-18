@@ -2,6 +2,31 @@ package azure
 
 import "testing"
 
+func TestBareSubscriptionGUID(t *testing.T) {
+	const guid = "00000000-0000-0000-0000-000000000001"
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"bare guid", guid, guid},
+		{"slash prefix", "/subscriptions/" + guid, guid},
+		{"trailing slash", "/subscriptions/" + guid + "/", guid},
+		{"with resource group", "/subscriptions/" + guid + "/resourceGroups/x", ""},
+		{"non-guid string", "my-subscription", ""},
+		{"empty", "", ""},
+		{"uppercase prefix", "/SUBSCRIPTIONS/" + guid, guid},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := BareSubscriptionGUID(tt.input)
+			if got != tt.want {
+				t.Errorf("BareSubscriptionGUID(%q) = %q; want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestExpandScopeFilter(t *testing.T) {
 	tests := []struct {
 		name        string

@@ -157,3 +157,82 @@ func TestFavoriteComplete(t *testing.T) {
 func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
+
+func TestAddRecentActivation(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a1 := RecentActivation{Role: "Contributor", Scope: "/subscriptions/aaa", Duration: "1h", Justification: "first"}
+	a2 := RecentActivation{Role: "Reader", Scope: "/subscriptions/bbb", Duration: "2h", Justification: "second"}
+	s.AddRecentActivation(a1)
+	s.AddRecentActivation(a2)
+	s.AddRecentActivation(RecentActivation{Role: "contributor", Scope: "/subscriptions/aaa", Duration: "1H", Justification: "updated"})
+
+	acts := s.RecentActivations()
+	if len(acts) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(acts))
+	}
+	if acts[0].Role != "contributor" || acts[0].Justification != "updated" {
+		t.Fatalf("expected deduped entry at front, got %+v", acts[0])
+	}
+	if acts[1].Role != "Reader" {
+		t.Fatalf("expected Reader second, got %+v", acts[1])
+	}
+}
+
+func TestRecentActivationPersistence(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a := RecentActivation{Role: "Owner", Scope: "/subscriptions/ccc", Duration: "8h", Justification: "persist test"}
+	s.AddRecentActivation(a)
+	if err := s.SaveState(); err != nil {
+		t.Fatal(err)
+	}
+
+	s2, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	acts := s2.RecentActivations()
+	if len(acts) == 0 || acts[0].Role != "Owner" || acts[0].Justification != "persist test" {
+		t.Fatalf("expected persisted activation, got %v", acts)
+	}
+}
+
+func TestRecentActivationEligibilityScope(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := RecentActivation{
+		Role:             "Contributor",
+		Scope:            "/subscriptions/00000000-0000-0000-0000-000000000000",
+		EligibilityScope: "/providers/Microsoft.Management/managementGroups/my-mgmt-group",
+		Duration:         "1h",
+		Justification:    "test",
+	}
+	s.AddRecentActivation(a)
+	acts := s.RecentActivations()
+	if acts[0].EligibilityScope != "/providers/Microsoft.Management/managementGroups/my-mgmt-group" {
+		t.Errorf("expected eligibility scope, got %q", acts[0].EligibilityScope)
+	}
+	b := RecentActivation{
+		Role:          "Reader",
+		Scope:         "/subscriptions/00000000-0000-0000-0000-000000000001",
+		Duration:      "1h",
+		Justification: "test",
+	}
+	s.AddRecentActivation(b)
+	acts = s.RecentActivations()
+	if acts[0].EligibilityScope != "" {
+		t.Errorf("expected empty eligibility scope for old entry, got %q", acts[0].EligibilityScope)
+	}
+}

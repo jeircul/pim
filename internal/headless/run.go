@@ -8,9 +8,11 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/jeircul/pim/internal/app"
 	"github.com/jeircul/pim/internal/azure"
+	"github.com/jeircul/pim/internal/state"
 )
 
 // ClientAPI is the subset of azure.Client methods used by headless execution.
@@ -20,6 +22,7 @@ type ClientAPI interface {
 	GetEligibleRoles(ctx context.Context) ([]azure.Role, error)
 	ActivateRole(ctx context.Context, role azure.Role, principalID, justification string, minutes int, targetScope string) (*azure.ScheduleResponse, error)
 	DeactivateRole(ctx context.Context, assignment azure.ActiveAssignment, principalID string) (*azure.ScheduleResponse, error)
+	ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) ([]azure.Subscription, map[string]string, []string, error)
 }
 
 var _ ClientAPI = (*azure.Client)(nil)
@@ -40,6 +43,8 @@ func Run(ctx context.Context, a *app.App) error {
 		return runDeactivate(ctx, a, client, user, os.Stdout)
 	case app.CmdActivate:
 		return runActivate(ctx, a, client, user, os.Stdout)
+	case app.CmdSearch:
+		return runSearchWithErr(ctx, a, client, os.Stdout, os.Stderr)
 	default:
 		return runStatus(ctx, a, client, user, os.Stdout)
 	}
@@ -135,7 +140,7 @@ func runActivate(ctx context.Context, a *app.App, client ClientAPI, user *azure.
 		return fmt.Errorf("get eligible roles: %w", err)
 	}
 
-	targets, err := filterRoles(roles, cfg.Roles, cfg.Scopes)
+	targets, err := filterRoles(ctx, client, roles, cfg.Roles, cfg.Scopes)
 	if err != nil {
 		return err
 	}
@@ -153,6 +158,16 @@ func runActivate(ctx context.Context, a *app.App, client ClientAPI, user *azure.
 			continue
 		}
 		fmt.Fprintf(out, "Activated: %s @ %s for %s\n", match.role.RoleName, scope, timeStr)
+		a.Store.AddRecentActivation(state.RecentActivation{
+			Role:             match.role.RoleName,
+			Scope:            scope,
+			ScopeDisplay:     azure.DefaultScopeDisplay(scope, ""),
+			EligibilityScope: match.role.Scope,
+			ScheduleID:       match.role.EligibilityScheduleID,
+			Duration:         timeStr,
+			Justification:    cfg.Justification,
+			ActivatedAt:      time.Now(),
+		})
 	}
 
 	if lastErr != nil {
@@ -170,7 +185,7 @@ type roleTarget struct {
 	scope string
 }
 
-func filterRoles(roles []azure.Role, roleFilters, scopeFilters []string) ([]roleTarget, error) {
+func filterRoles(ctx context.Context, client ClientAPI, roles []azure.Role, roleFilters, scopeFilters []string) ([]roleTarget, error) {
 	roleNames := make([]string, len(roles))
 	for i, r := range roles {
 		roleNames[i] = r.RoleName
@@ -193,7 +208,17 @@ func filterRoles(roles []azure.Role, roleFilters, scopeFilters []string) ([]role
 		scopeDisplays[i] = r.ScopeDisplay
 	}
 
+	mgCache := map[string]map[string]struct{}{}
+	seen := map[string]struct{}{}
 	var out []roleTarget
+	add := func(t roleTarget) {
+		key := strings.ToLower(t.role.RoleDefinitionID) + "|" + strings.ToLower(azure.NormalizeScope(t.scope))
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		out = append(out, t)
+	}
 	for _, sf := range scopeFilters {
 		expanded, _ := azure.ExpandScopeFilter(sf)
 		armMatches := map[int]struct{}{}
@@ -204,9 +229,39 @@ func filterRoles(roles []azure.Role, roleFilters, scopeFilters []string) ([]role
 		}
 		if len(armMatches) > 0 {
 			for i := range armMatches {
-				out = append(out, roleTarget{role: roles[i], scope: expanded})
+				add(roleTarget{role: roles[i], scope: expanded})
 			}
 			continue
+		}
+
+		if guid := azure.BareSubscriptionGUID(sf); guid != "" {
+			before := len(out)
+			for _, i := range roleIdx {
+				if !azure.IsManagementGroupScope(roles[i].Scope) {
+					continue
+				}
+				mgID := azure.ManagementGroupIDFromScope(roles[i].Scope)
+				if _, cached := mgCache[mgID]; !cached {
+					list, _, warnings, err := client.ListAllSubscriptionsUnderMG(ctx, mgID)
+					if err != nil {
+						return nil, fmt.Errorf("list subscriptions under management group %s: %w", mgID, err)
+					}
+					for _, w := range warnings {
+						fmt.Fprintf(os.Stderr, "warning: %s\n", w)
+					}
+					set := make(map[string]struct{}, len(list))
+					for _, s := range list {
+						set[strings.ToLower(s.ID)] = struct{}{}
+					}
+					mgCache[mgID] = set
+				}
+				if _, ok := mgCache[mgID][strings.ToLower(guid)]; ok {
+					add(roleTarget{role: roles[i], scope: "/subscriptions/" + guid})
+				}
+			}
+			if len(out) > before {
+				continue
+			}
 		}
 
 		candidateDisplays := make([]string, len(roleIdx))
@@ -219,7 +274,7 @@ func filterRoles(roles []azure.Role, roleFilters, scopeFilters []string) ([]role
 		}
 		for _, j := range dispIdx {
 			i := roleIdx[j]
-			out = append(out, roleTarget{role: roles[i], scope: roles[i].Scope})
+			add(roleTarget{role: roles[i], scope: roles[i].Scope})
 		}
 	}
 	return out, nil

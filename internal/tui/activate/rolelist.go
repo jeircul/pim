@@ -34,8 +34,10 @@ type RoleList struct {
 	loadFunc     func() ([]azure.Role, error)
 	loadActiveFn func() ([]azure.ActiveAssignment, error)
 	// roleFilter auto-advances when a single --role flag match is found
-	roleFilter  []string
-	scopeFilter []string
+	roleFilter       []string
+	scopeFilter      []string
+	eligibilityScope string
+	scheduleID       string
 }
 
 // NewRoleList creates a RoleList model.
@@ -46,17 +48,21 @@ func NewRoleList(
 	roleFilter []string,
 	scopeFilter []string,
 	loadFunc func() ([]azure.Role, error),
+	eligibilityScope string,
+	scheduleID string,
 ) RoleList {
 	return RoleList{
-		theme:        theme,
-		keys:         keys,
-		spinner:      components.NewSpinner(theme.Active),
-		active:       map[string]bool{},
-		loading:      true,
-		loadFunc:     loadFunc,
-		loadActiveFn: loadActive,
-		roleFilter:   roleFilter,
-		scopeFilter:  scopeFilter,
+		theme:            theme,
+		keys:             keys,
+		spinner:          components.NewSpinner(theme.Active),
+		active:           map[string]bool{},
+		loading:          true,
+		loadFunc:         loadFunc,
+		loadActiveFn:     loadActive,
+		roleFilter:       roleFilter,
+		scopeFilter:      scopeFilter,
+		eligibilityScope: eligibilityScope,
+		scheduleID:       scheduleID,
 	}
 }
 
@@ -200,6 +206,14 @@ func (m *RoleList) applyFilter() {
 // autoAdvance returns a cmd that immediately selects a role when exactly one
 // --role flag match is found in the visible list, skipping manual selection.
 func (m *RoleList) autoAdvance() tea.Cmd {
+	if m.scheduleID != "" {
+		for _, r := range m.roles {
+			if strings.EqualFold(r.EligibilityScheduleID, m.scheduleID) {
+				role := r
+				return func() tea.Msg { return RoleListDoneMsg{Selected: []azure.Role{role}} }
+			}
+		}
+	}
 	if len(m.roleFilter) == 0 {
 		return nil
 	}
@@ -218,10 +232,23 @@ func (m *RoleList) autoAdvance() tea.Cmd {
 		return func() tea.Msg { return RoleListDoneMsg{Selected: []azure.Role{r}} }
 	}
 	if len(matches) > 1 && len(m.scopeFilter) > 0 {
+		if m.eligibilityScope != "" {
+			var byEligibility []azure.Role
+			for _, r := range matches {
+				if strings.EqualFold(r.Scope, m.eligibilityScope) {
+					byEligibility = append(byEligibility, r)
+				}
+			}
+			if len(byEligibility) == 1 {
+				r := byEligibility[0]
+				return func() tea.Msg { return RoleListDoneMsg{Selected: []azure.Role{r}} }
+			}
+		}
 		var narrowed []azure.Role
 		for _, r := range matches {
 			for _, sf := range m.scopeFilter {
-				if azure.ScopeMatches(sf, r.Scope, r.ScopeDisplay) {
+				expanded, _ := azure.ExpandScopeFilter(sf)
+				if azure.ScopeMatches(sf, r.Scope, r.ScopeDisplay) || azure.ScopeIsChildOf(expanded, r.Scope) {
 					narrowed = append(narrowed, r)
 					break
 				}
@@ -230,6 +257,31 @@ func (m *RoleList) autoAdvance() tea.Cmd {
 		if len(narrowed) == 1 {
 			r := narrowed[0]
 			return func() tea.Msg { return RoleListDoneMsg{Selected: []azure.Role{r}} }
+		}
+		guid := ""
+		for _, sf := range m.scopeFilter {
+			if g := azure.BareSubscriptionGUID(sf); g != "" {
+				guid = g
+				break
+			}
+		}
+		if guid != "" {
+			allMG := true
+			for _, r := range matches {
+				if !azure.IsManagementGroupScope(r.Scope) {
+					allMG = false
+					break
+				}
+			}
+			if allMG && len(matches) == 1 {
+				// Exactly one MG-scoped candidate — trust the configured scope.
+				// Azure rejects a wrong-MG activation with 400/403.
+				r := matches[0]
+				return func() tea.Msg { return RoleListDoneMsg{Selected: []azure.Role{r}} }
+			}
+			// Multiple MG-scoped candidates: cannot determine which MG owns
+			// the configured subscription without an API call. Fall through to
+			// the role list so the user can pick manually.
 		}
 	}
 	return nil

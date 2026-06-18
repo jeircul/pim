@@ -111,7 +111,18 @@ Full API reference: `.agents/skills/golang/references/azure-pim-api.md`.
 - Dashboard 1–9 shortcut: if `Complete()` → `startWizard` with `AutoSubmit=true` and `favoritePending=true`; activation result shown as dashboard notice, TUI stays open. If not `Complete()` → error notice, no activation.
 - `favoritePending` on `AppModel` distinguishes favorite-triggered activations (return to dashboard) from manual wizard activations (quit with summary).
 - Favorites screen `ActivateMsg` always opens the wizard (incomplete favorites stop at the missing step).
-- `autoAdvance` in `rolelist.go` uses `scopeFilter` as a tiebreaker when multiple roles share the same name — emits only when exactly one scope match survives.
+- `autoAdvance` in `rolelist.go` uses `scopeFilter` as a tiebreaker when multiple roles share the same name. When all matches are MG-scoped and the filter is a bare subscription GUID, the first match is trusted (Azure rejects wrong-scope activations with 400/403). `scopeOverride` pins the subscription as `targetScope` when exactly one MG-scoped role is selected.
+- `RecentActivation.EligibilityScope` stores the ARM eligibility path at activation time. Re-activation from the Recent screen prefers this over `Scope` so the wizard matches the original role precisely.
+- `pim search --output toml` generates paste-ready `[[favorites]]` blocks with `scope`, `eligibility_scope` (MG-inherited roles only), and `schedule_id` pre-filled. Users fill in `duration`, `justification`, and `key` only. Never write `schedule_id` or `eligibility_scope` by hand.
+- `Favorite.ScheduleID` is the `EligibilityScheduleID` from the Azure PIM API — the globally-unique key used by `ActivateRole` in `linkedRoleEligibilityScheduleID`. When set, `autoAdvance` selects the matching role by exact ID, bypassing all name/scope heuristics. Falls through to `eligibility_scope` + heuristics when empty (hand-written or pre-`schedule_id` favorites).
+- `scope` and `schedule_id` are always both required even when they reference the same subscription: `scope` is the PUT URL target; `schedule_id` identifies the eligibility schedule in the request body.
+
+## Recent behaviour
+
+- `R` from the dashboard opens the recent activations screen (last 10 successful activations).
+- Each entry stores `Role`, `Scope` (resolved target), `EligibilityScope` (ARM eligibility path), `Duration`, `Justification`, `ActivatedAt`.
+- Pressing Enter builds a `Favorite` using `EligibilityScope` as `Scope` when non-empty, falling back to `Scope`. This ensures re-activation is as precise as the original.
+- Populated from both TUI (`ConfirmDoneMsg`) and headless (`AddRecentActivation` in `run.go`) success paths only — failed activations are never recorded.
 
 ## Skills
 
@@ -119,3 +130,28 @@ Full API reference: `.agents/skills/golang/references/azure-pim-api.md`.
 
 - OpenCode: `skill golang` (auto-loads on Go/Azure tasks).
 - Other agents: read `.agents/skills/golang/SKILL.md` and `references/`.
+
+## Public-artifact sanitization (mandatory)
+
+**Scope:** every PR body, commit message, README/CHANGELOG/docs edit, code comment, example block, and test fixture that will be committed, pushed, or posted publicly.
+
+**Hard rule:** Identifiers that originate from user-pasted terminal output, chat history, or a live environment are sensitive by default. Never echo them verbatim into any committed or public artifact.
+
+**Mandatory placeholder vocabulary:**
+
+| Real thing | Placeholder to use |
+|---|---|
+| Subscription GUID | `00000000-0000-0000-0000-000000000000` |
+| Management group / tenant name | `my-mgmt-group` |
+| Subscription display name | `my-subscription` |
+| Resource group | `my-rg` |
+| Role names | Azure built-ins only: `Reader`, `Owner`, `Contributor` |
+
+**Pre-write self-check (run before every commit/PR/doc edit):**
+1. Does any value in this text originate from pasted terminal output or a live session?
+2. Does it match `[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}` and is it **not** an all-zero/repeated-nibble sentinel?
+3. Is it a proper noun that is not an Azure built-in role or a well-known public Azure service name?
+
+→ Any "yes" → replace with the placeholder above **before** writing.
+
+**Mechanical backstop:** `task check` runs `scripts/check-secrets.sh` which scans staged content and key doc files. It also runs as a precondition of `task release:dev` and `task release:stable`. Add internal names to `.secrets-blocklist` (gitignored, never committed).

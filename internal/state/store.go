@@ -16,16 +16,19 @@ const (
 	configFile     = "config.toml"
 	stateFile      = "state.toml"
 	maxRecentJusts = 10
+	maxRecentActs  = 10
 )
 
 // Favorite is a saved role+scope+duration combo.
 type Favorite struct {
-	Label         string `toml:"label"`
-	Role          string `toml:"role"`
-	Scope         string `toml:"scope"`
-	Duration      string `toml:"duration"`
-	Justification string `toml:"justification"`
-	Key           int    `toml:"key"` // 1-9 for dashboard shortcuts
+	Label            string `toml:"label"`
+	Role             string `toml:"role"`
+	Scope            string `toml:"scope"`
+	Duration         string `toml:"duration"`
+	Justification    string `toml:"justification"`
+	EligibilityScope string `toml:"eligibility_scope,omitempty"`
+	ScheduleID       string `toml:"schedule_id,omitempty"`
+	Key              int    `toml:"key"`
 }
 
 // Complete reports whether all four required activation fields are set.
@@ -51,6 +54,18 @@ func (f Favorite) MissingFields() string {
 	return strings.Join(missing, ", ")
 }
 
+// RecentActivation records a successfully completed role activation.
+type RecentActivation struct {
+	Role             string    `toml:"role"`
+	Scope            string    `toml:"scope"`
+	ScopeDisplay     string    `toml:"scope_display"`
+	EligibilityScope string    `toml:"eligibility_scope,omitempty"`
+	ScheduleID       string    `toml:"schedule_id,omitempty"`
+	Duration         string    `toml:"duration"`
+	Justification    string    `toml:"justification"`
+	ActivatedAt      time.Time `toml:"activated_at"`
+}
+
 // Preferences holds user-editable preferences.
 type Preferences struct {
 	DefaultDuration string `toml:"default_duration"`
@@ -64,8 +79,9 @@ type Config struct {
 
 // State is auto-managed runtime state (~/.config/pim/state.toml).
 type State struct {
-	Version              int      `toml:"version"`
-	RecentJustifications []string `toml:"recent_justifications"`
+	Version              int                `toml:"version"`
+	RecentJustifications []string           `toml:"recent_justifications"`
+	RecentActivations    []RecentActivation `toml:"recent_activations"`
 }
 
 // Store manages persistent config and state files.
@@ -77,14 +93,14 @@ type Store struct {
 }
 
 // New opens (or initialises) the store at the given directory.
-// Pass an empty string to use the default ~/.config/pim/.
+// Pass an empty string to use the platform default: $XDG_CONFIG_HOME/pim on Linux/macOS (falls back to ~/.config/pim), %APPDATA%\pim on Windows.
 func New(dir string) (*Store, error) {
 	if dir == "" {
-		home, err := os.UserHomeDir()
+		cfgDir, err := os.UserConfigDir()
 		if err != nil {
-			return nil, fmt.Errorf("locate home dir: %w", err)
+			return nil, fmt.Errorf("locate config dir: %w", err)
 		}
-		dir = filepath.Join(home, ".config", "pim")
+		dir = filepath.Join(cfgDir, "pim")
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create config dir: %w", err)
@@ -172,6 +188,37 @@ func (s *Store) AddRecentJustification(j string) {
 		}
 	}
 	s.State.RecentJustifications = out
+}
+
+// RecentActivations returns a copy of the recent activations slice.
+func (s *Store) RecentActivations() []RecentActivation {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]RecentActivation, len(s.State.RecentActivations))
+	copy(out, s.State.RecentActivations)
+	return out
+}
+
+// AddRecentActivation prepends an activation record, deduped on role+scope+duration (max 10).
+// Duplicate entries (same role, scope, and duration, case-insensitive) are moved to front
+// with a refreshed ActivatedAt.
+func (s *Store) AddRecentActivation(a RecentActivation) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := strings.ToLower(a.Role) + "|" + strings.ToLower(a.Scope) + "|" + strings.ToLower(a.Duration)
+	out := make([]RecentActivation, 0, maxRecentActs)
+	out = append(out, a)
+	for _, existing := range s.State.RecentActivations {
+		k := strings.ToLower(existing.Role) + "|" + strings.ToLower(existing.Scope) + "|" + strings.ToLower(existing.Duration)
+		if k == key {
+			continue
+		}
+		out = append(out, existing)
+		if len(out) >= maxRecentActs {
+			break
+		}
+	}
+	s.State.RecentActivations = out
 }
 
 // FavoriteByKey returns the favorite assigned to a number key (1-9).

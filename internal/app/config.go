@@ -13,6 +13,7 @@ const (
 	CmdDeactivate = "deactivate"
 	CmdStatus     = "status"
 	CmdCompletion = "completion"
+	CmdSearch     = "search"
 )
 
 // OutputFormat controls headless output style.
@@ -21,6 +22,7 @@ type OutputFormat string
 const (
 	OutputTable OutputFormat = "table"
 	OutputJSON  OutputFormat = "json"
+	OutputTOML  OutputFormat = "toml"
 )
 
 // Config holds all parsed CLI configuration.
@@ -47,6 +49,12 @@ type Config struct {
 
 	// CompletionShell is set when Command == CmdCompletion (bash | zsh | fish).
 	CompletionShell string
+
+	// SearchQuery is the optional filter passed to pim search.
+	SearchQuery string
+
+	// MGFilter limits pim search to a specific management group (exact name or substring).
+	MGFilter string
 }
 
 // Parse parses os.Args[1:] into a Config.
@@ -74,6 +82,9 @@ func Parse(args []string) (Config, error) {
 			cfg.CompletionShell = strings.ToLower(args[1])
 		}
 		return cfg, nil
+	case CmdSearch:
+		cfg.Command = CmdSearch
+		args = args[1:]
 	case "version", "v":
 		cfg.Version = true
 		return cfg, nil
@@ -96,12 +107,28 @@ func Parse(args []string) (Config, error) {
 	fs.BoolVar(&cfg.Headless, "headless", false, "non-TUI mode; exit with code 0/1")
 
 	var outStr string
-	fs.StringVar(&outStr, "output", "table", "output format: table | json")
+	fs.StringVar(&outStr, "output", "table", "output format: table | json | toml")
 	fs.StringVar(&outStr, "o", "table", "output format (shorthand)")
 	fs.StringVar(&cfg.ConfigDir, "config-dir", "", "override config directory")
+	fs.StringVar(&cfg.MGFilter, "mg", "", "filter by management group (matches eligibility scope or physical parent)")
 
-	if err := fs.Parse(args); err != nil {
-		return cfg, err
+	remaining := args
+	for {
+		if err := fs.Parse(remaining); err != nil {
+			return cfg, err
+		}
+		rest := fs.Args()
+		if len(rest) == 0 {
+			break
+		}
+		if cfg.Command != CmdSearch {
+			return cfg, fmt.Errorf("unexpected argument: %q", rest[0])
+		}
+		if cfg.SearchQuery != "" {
+			return cfg, fmt.Errorf("unexpected extra argument: %q", rest[0])
+		}
+		cfg.SearchQuery = rest[0]
+		remaining = rest[1:]
 	}
 
 	cfg.Roles = []string(roles)
@@ -112,8 +139,14 @@ func Parse(args []string) (Config, error) {
 		cfg.Output = OutputTable
 	case "json":
 		cfg.Output = OutputJSON
+	case "toml":
+		cfg.Output = OutputTOML
 	default:
-		return cfg, fmt.Errorf("invalid --output %q: must be table or json", outStr)
+		return cfg, fmt.Errorf("invalid --output %q: must be table, json, or toml", outStr)
+	}
+
+	if cfg.Command == CmdSearch && (len(cfg.Roles) > 0 || len(cfg.Scopes) > 0 || cfg.TimeStr != "" || cfg.Justification != "" || cfg.Yes) {
+		return cfg, fmt.Errorf("search: --role, --scope, --time, --justification, --yes are not valid for this command")
 	}
 
 	return cfg, nil
@@ -153,6 +186,7 @@ Usage:
   pim activate [flags]         activate roles (TUI, flags pre-fill wizard)
   pim deactivate               deactivate roles (TUI)
   pim status                   view active/eligible roles (TUI)
+  pim search [query]           list PIM-eligible subscriptions; optional query filters by name or GUID (exact-first, substring-fallback); use --output json for machine-readable output; use --output toml for paste-ready favorites; use --mg to limit to a management group
   pim completion <bash|zsh|fish>  print shell completion script
   pim version                  print version
 
@@ -163,6 +197,6 @@ Activation flags:
   --justification, -j   justification text
   --yes, -y             skip confirmation prompt
   --headless            non-TUI mode (for scripting)
-  --output, -o          table | json (headless only)
+  --output, -o          table | json | toml (headless only)
 `)
 }

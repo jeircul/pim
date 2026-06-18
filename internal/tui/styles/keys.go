@@ -12,6 +12,7 @@ type KeyMap struct {
 	Status     key.Binding
 	Dashboard  key.Binding
 	Favorites  key.Binding
+	Recent     key.Binding
 	Up         key.Binding
 	Down       key.Binding
 	Enter      key.Binding
@@ -51,6 +52,10 @@ var DefaultKeyMap = KeyMap{
 	Favorites: key.NewBinding(
 		key.WithKeys("f"),
 		key.WithHelp("f", "favorites"),
+	),
+	Recent: key.NewBinding(
+		key.WithKeys("R"),
+		key.WithHelp("R", "recent"),
 	),
 	Up: key.NewBinding(
 		key.WithKeys("up", "k"),

@@ -3,6 +3,7 @@ package activate
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/jeircul/pim/internal/azure"
@@ -29,19 +30,21 @@ const (
 
 // Deps groups external dependencies injected into the Wizard.
 type Deps struct {
-	PrincipalID string
-	RoleFilter  []string // from --role flags
-	ScopeFilter []string // from --scope flags
-	TimeStr     string   // from --time flag
-	Justific    string   // from --justification flag
-	AutoSubmit  bool     // from --yes flag
-	Silent      bool     // suppress role-list render during direct favorite activation
-	Store       *state.Store
-	LoadRoles   func() ([]azure.Role, error)
-	LoadActive  func() ([]azure.ActiveAssignment, error)
-	LoadSubs    func(mgID string) ([]azure.ManagementGroup, []azure.Subscription, error)
-	LoadRGs     func(subID string) ([]azure.ResourceGroup, error)
-	Activate    func(role azure.Role, principalID, justification string, minutes int, targetScope string) error
+	PrincipalID      string
+	RoleFilter       []string // from --role flags
+	ScopeFilter      []string // from --scope flags
+	TimeStr          string   // from --time flag
+	Justific         string   // from --justification flag
+	AutoSubmit       bool     // from --yes flag
+	Silent           bool     // suppress role-list render during direct favorite activation
+	Store            *state.Store
+	LoadRoles        func() ([]azure.Role, error)
+	LoadActive       func() ([]azure.ActiveAssignment, error)
+	LoadSubs         func(mgID string) ([]azure.ManagementGroup, []azure.Subscription, error)
+	LoadRGs          func(subID string) ([]azure.ResourceGroup, error)
+	Activate         func(role azure.Role, principalID, justification string, minutes int, targetScope string) error
+	EligibilityScope string
+	ScheduleID       string
 }
 
 // autoConfirmMsg triggers auto-submission on the confirm step (--yes flag).
@@ -63,16 +66,18 @@ type Wizard struct {
 	confirm   Confirm
 
 	// accumulation across steps
-	selectedRoles []azure.Role
-	scopeQueue    []azure.Role // MG-scoped roles still needing scope selection
-	items         []activationItem
-	scopeVisited  bool // whether the scope tree step was visited this run
+	selectedRoles     []azure.Role
+	scopeQueue        []azure.Role // MG-scoped roles still needing scope selection
+	items             []activationItem
+	scopeVisited      bool // whether the scope tree step was visited this run
+	lastMinutes       int
+	lastJustification string
 }
 
 // New creates a Wizard. Call Init() to start.
 func New(theme styles.Theme, keys styles.KeyMap, deps Deps) Wizard {
 	w := Wizard{theme: theme, keys: keys, deps: deps}
-	w.roleList = NewRoleList(theme, keys, deps.LoadActive, deps.RoleFilter, deps.ScopeFilter, deps.LoadRoles)
+	w.roleList = NewRoleList(theme, keys, deps.LoadActive, deps.RoleFilter, deps.ScopeFilter, deps.LoadRoles, deps.EligibilityScope, deps.ScheduleID)
 	return w
 }
 
@@ -135,11 +140,29 @@ func (w Wizard) Update(msg tea.Msg) (Wizard, tea.Cmd) {
 		return w.startOptions()
 
 	case OptionsDoneMsg:
+		w.lastMinutes = msg.Minutes
+		w.lastJustification = msg.Justification
 		w.deps.Store.AddRecentJustification(msg.Justification)
 		_ = w.deps.Store.SaveState()
 		return w.startConfirm(msg.Minutes, msg.Justification)
 
 	case ConfirmDoneMsg:
+		for _, r := range msg.Results {
+			if r.Err != nil {
+				continue
+			}
+			w.deps.Store.AddRecentActivation(state.RecentActivation{
+				Role:             r.RoleName,
+				Scope:            r.Scope,
+				ScopeDisplay:     azure.DefaultScopeDisplay(r.Scope, ""),
+				EligibilityScope: r.EligibilityScope,
+				ScheduleID:       r.ScheduleID,
+				Duration:         azure.FormatDuration(w.lastMinutes),
+				Justification:    w.lastJustification,
+				ActivatedAt:      time.Now(),
+			})
+		}
+		_ = w.deps.Store.SaveState()
 		done := WizardDoneMsg{Results: msg.Results}
 		return w, func() tea.Msg { return done }
 
@@ -258,7 +281,11 @@ func scopeTreeConsumed(prev, next ScopeTree, msg tea.Msg) bool {
 // View renders the current step with a wizard header.
 func (w Wizard) View() string {
 	if w.deps.Silent && w.step == stepRoleList {
-		return ""
+		if w.roleList.loading {
+			return w.roleList.spinner.View() + " activating…\n"
+		}
+		// Roles loaded but autoAdvance didn't fire — drop Silent and show the list.
+		w.deps.Silent = false
 	}
 	var sb strings.Builder
 	sb.WriteString(w.renderStepIndicator() + "\n\n")
@@ -313,15 +340,35 @@ func (w Wizard) advanceFromRoles() (Wizard, tea.Cmd) {
 // scopeOverride returns the target scope to use when a --scope filter matches
 // the role's eligibility scope. Returns the filter value when it is a valid
 // ARM child path, or the role's own scope when the filter matches by display
-// name substring. Returns "" when no filter matches.
+// name substring. For MG-scoped roles with a subscription/RG filter, the
+// filter is trusted only when this role is the sole MG-scoped selection —
+// the sole MG-scoped selection is trusted as the configured scope; Azure
+// rejects a wrong-MG activation with 400/403. Returns "" otherwise.
 func (w Wizard) scopeOverride(r azure.Role) string {
 	for _, s := range w.deps.ScopeFilter {
 		s = strings.TrimSpace(s)
 		if s == "" {
 			continue
 		}
-		if azure.ScopeIsChildOf(s, r.Scope) {
-			return s
+		expanded, _ := azure.ExpandScopeFilter(s)
+		if azure.ScopeIsChildOf(expanded, r.Scope) {
+			return expanded
+		}
+		// MG-scoped role + subscription/RG filter: only trust when exactly one
+		// MG-scoped role is selected, ensuring async resolution or manual
+		// unambiguous pick — never blind-trust when multiple MG candidates exist.
+		if azure.IsManagementGroupScope(r.Scope) &&
+			(azure.IsSubscriptionScope(expanded) || azure.IsResourceGroupScope(expanded)) {
+			mgCount := 0
+			for _, sel := range w.selectedRoles {
+				if azure.IsManagementGroupScope(sel.Scope) {
+					mgCount++
+				}
+			}
+			if mgCount == 1 {
+				return expanded
+			}
+			return ""
 		}
 		lower := strings.ToLower(s)
 		if strings.Contains(strings.ToLower(r.ScopeDisplay), lower) ||
@@ -365,6 +412,8 @@ func (w Wizard) startOptions() (Wizard, tea.Cmd) {
 	if w.deps.TimeStr != "" && w.deps.Justific != "" {
 		mins, err := azure.ParseDurationMinutes(w.deps.TimeStr)
 		if err == nil {
+			w.lastMinutes = mins
+			w.lastJustification = w.deps.Justific
 			return w.startConfirm(mins, w.deps.Justific)
 		}
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/jeircul/pim/internal/tui/dashboard"
 	"github.com/jeircul/pim/internal/tui/deactivate"
 	"github.com/jeircul/pim/internal/tui/favorites"
+	"github.com/jeircul/pim/internal/tui/recent"
 	"github.com/jeircul/pim/internal/tui/status"
 )
 
@@ -38,6 +39,7 @@ const (
 	ScreenActivate
 	ScreenDeactivate
 	ScreenFavorites
+	ScreenRecent
 )
 
 // titleOf returns the header subtitle for a screen.
@@ -51,6 +53,8 @@ func titleOf(s Screen) string {
 		return "deactivate"
 	case ScreenFavorites:
 		return "favorites"
+	case ScreenRecent:
+		return "recent"
 	default:
 		return "pim"
 	}
@@ -69,6 +73,7 @@ type AppModel struct {
 	wizardModel     activate.Wizard
 	deactivateModel deactivate.Model
 	favoritesModel  favorites.Model
+	recentModel     recent.Model
 	principalID     string
 	userReady       bool
 	favoritePending bool
@@ -93,6 +98,7 @@ func New(a *app.App, ctx context.Context, cancel context.CancelFunc) (AppModel, 
 
 	dash := dashboard.New(theme, keys, a.Store)
 	favs := favorites.New(theme, keys, a.Store)
+	rec := recent.New(theme, keys, a.Store)
 
 	return AppModel{
 		a:              a,
@@ -103,6 +109,7 @@ func New(a *app.App, ctx context.Context, cancel context.CancelFunc) (AppModel, 
 		screen:         ScreenDashboard,
 		dashboardModel: dash,
 		favoritesModel: favs,
+		recentModel:    rec,
 	}, nil
 }
 
@@ -194,6 +201,14 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		fav := msg.Favorite
 		return m, m.startWizard(&fav, false)
 
+	case recent.DoneMsg:
+		m.screen = ScreenDashboard
+		return m, nil
+
+	case recent.ActivateMsg:
+		fav := msg.Favorite
+		return m, m.startWizard(&fav, false)
+
 	case dashboard.ActivateMsg:
 		if !m.userReady {
 			return m, nil
@@ -223,6 +238,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case key.Matches(msg, m.keys.Favorites):
 				m.screen = ScreenFavorites
 				return m, m.favoritesModel.Init()
+			case key.Matches(msg, m.keys.Recent):
+				m.screen = ScreenRecent
+				return m, m.recentModel.Init()
 			}
 		}
 	}
@@ -240,6 +258,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ScreenFavorites:
 		m.favoritesModel, cmd = m.favoritesModel.Update(msg)
 		editing = m.favoritesModel.Editing()
+	case ScreenRecent:
+		m.recentModel, cmd = m.recentModel.Update(msg)
 	default:
 		m.dashboardModel, cmd = m.dashboardModel.Update(msg)
 	}
@@ -249,7 +269,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, cmd
-} // startStatus constructs a fresh status model and switches to that screen.
+}
+
+// startStatus constructs a fresh status model and switches to that screen.
 func (m *AppModel) startStatus() tea.Cmd {
 	client := m.a.Client
 	ctx := m.ctx
@@ -311,7 +333,7 @@ func (m *AppModel) startWizard(fav *state.Favorite, autoSubmit bool) tea.Cmd {
 		AutoSubmit:  cfg.Yes,
 		Store:       m.a.Store,
 		LoadRoles: func() ([]azure.Role, error) {
-			callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
+			callCtx, callCancel := context.WithTimeout(ctx, 60*time.Second)
 			defer callCancel()
 			return client.GetEligibleRoles(callCtx)
 		},
@@ -340,6 +362,12 @@ func (m *AppModel) startWizard(fav *state.Favorite, autoSubmit bool) tea.Cmd {
 
 	if fav != nil && fav.Justification != "" && deps.Justific == "" {
 		deps.Justific = fav.Justification
+	}
+	if fav != nil && fav.EligibilityScope != "" {
+		deps.EligibilityScope = fav.EligibilityScope
+	}
+	if fav != nil && fav.ScheduleID != "" {
+		deps.ScheduleID = fav.ScheduleID
 	}
 	if autoSubmit {
 		deps.AutoSubmit = true
@@ -414,6 +442,8 @@ func (m AppModel) View() tea.View {
 			body = m.deactivateModel.View()
 		case ScreenFavorites:
 			body = m.favoritesModel.View()
+		case ScreenRecent:
+			body = m.recentModel.View()
 		default:
 			body = m.dashboardModel.View()
 		}

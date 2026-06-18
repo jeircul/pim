@@ -13,9 +13,11 @@ import (
 
 // Result holds the outcome of a single activation or deactivation.
 type Result struct {
-	RoleName string
-	Scope    string
-	Err      error
+	RoleName         string
+	Scope            string
+	EligibilityScope string
+	ScheduleID       string
+	Err              error
 }
 
 // ConfirmDoneMsg is sent when all activations have completed (success or partial failure).
@@ -163,9 +165,11 @@ func (m *Confirm) collectResults() []Result {
 			scope = it.role.Scope
 		}
 		results = append(results, Result{
-			RoleName: it.role.RoleName,
-			Scope:    scope,
-			Err:      it.err,
+			RoleName:         it.role.RoleName,
+			Scope:            scope,
+			EligibilityScope: it.role.Scope,
+			ScheduleID:       it.role.EligibilityScheduleID,
+			Err:              it.err,
 		})
 	}
 	return results
