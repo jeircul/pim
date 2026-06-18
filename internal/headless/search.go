@@ -185,7 +185,8 @@ func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role, 
 type favBlock struct {
 	displayName      string
 	role             string
-	eligibilityScope string
+	eligibilityScope string // /subscriptions/<guid> — activation target
+	mgEligibility    string // MG ARM path — for config eligibility_scope field; empty for sub-direct roles
 }
 
 // tomlFromHits emits one [[favorites]] block per (subscription, role) pair.
@@ -273,6 +274,7 @@ func tomlFromHits(hits []SearchHit, roles []azure.Role, out io.Writer) error {
 					displayName:      display,
 					role:             r.RoleName,
 					eligibilityScope: subScope,
+					mgEligibility:    r.Scope,
 				})
 			}
 		}
@@ -297,6 +299,9 @@ func tomlOut(blocks []favBlock, out io.Writer) error {
 		fmt.Fprintf(out, "label         = %q\n", b.role+" @ "+b.displayName)
 		fmt.Fprintf(out, "role          = %q\n", b.role)
 		fmt.Fprintf(out, "scope         = %q\n", b.eligibilityScope)
+		if b.mgEligibility != "" {
+			fmt.Fprintf(out, "eligibility_scope = %q\n", b.mgEligibility)
+		}
 		fmt.Fprintf(out, "duration      = \"1h\"\n")
 		fmt.Fprintf(out, "justification = \"\"\n")
 		fmt.Fprintf(out, "key           = 0\n")

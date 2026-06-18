@@ -30,19 +30,20 @@ const (
 
 // Deps groups external dependencies injected into the Wizard.
 type Deps struct {
-	PrincipalID string
-	RoleFilter  []string // from --role flags
-	ScopeFilter []string // from --scope flags
-	TimeStr     string   // from --time flag
-	Justific    string   // from --justification flag
-	AutoSubmit  bool     // from --yes flag
-	Silent      bool     // suppress role-list render during direct favorite activation
-	Store       *state.Store
-	LoadRoles   func() ([]azure.Role, error)
-	LoadActive  func() ([]azure.ActiveAssignment, error)
-	LoadSubs    func(mgID string) ([]azure.ManagementGroup, []azure.Subscription, error)
-	LoadRGs     func(subID string) ([]azure.ResourceGroup, error)
-	Activate    func(role azure.Role, principalID, justification string, minutes int, targetScope string) error
+	PrincipalID      string
+	RoleFilter       []string // from --role flags
+	ScopeFilter      []string // from --scope flags
+	TimeStr          string   // from --time flag
+	Justific         string   // from --justification flag
+	AutoSubmit       bool     // from --yes flag
+	Silent           bool     // suppress role-list render during direct favorite activation
+	Store            *state.Store
+	LoadRoles        func() ([]azure.Role, error)
+	LoadActive       func() ([]azure.ActiveAssignment, error)
+	LoadSubs         func(mgID string) ([]azure.ManagementGroup, []azure.Subscription, error)
+	LoadRGs          func(subID string) ([]azure.ResourceGroup, error)
+	Activate         func(role azure.Role, principalID, justification string, minutes int, targetScope string) error
+	EligibilityScope string
 }
 
 // autoConfirmMsg triggers auto-submission on the confirm step (--yes flag).
@@ -75,7 +76,7 @@ type Wizard struct {
 // New creates a Wizard. Call Init() to start.
 func New(theme styles.Theme, keys styles.KeyMap, deps Deps) Wizard {
 	w := Wizard{theme: theme, keys: keys, deps: deps}
-	w.roleList = NewRoleList(theme, keys, deps.LoadActive, deps.RoleFilter, deps.ScopeFilter, deps.LoadRoles)
+	w.roleList = NewRoleList(theme, keys, deps.LoadActive, deps.RoleFilter, deps.ScopeFilter, deps.LoadRoles, deps.EligibilityScope)
 	return w
 }
 

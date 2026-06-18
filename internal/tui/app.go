@@ -363,6 +363,9 @@ func (m *AppModel) startWizard(fav *state.Favorite, autoSubmit bool) tea.Cmd {
 	if fav != nil && fav.Justification != "" && deps.Justific == "" {
 		deps.Justific = fav.Justification
 	}
+	if fav != nil && fav.EligibilityScope != "" {
+		deps.EligibilityScope = fav.EligibilityScope
+	}
 	if autoSubmit {
 		deps.AutoSubmit = true
 		deps.Silent = true

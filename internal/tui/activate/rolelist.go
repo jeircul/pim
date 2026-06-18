@@ -34,8 +34,9 @@ type RoleList struct {
 	loadFunc     func() ([]azure.Role, error)
 	loadActiveFn func() ([]azure.ActiveAssignment, error)
 	// roleFilter auto-advances when a single --role flag match is found
-	roleFilter  []string
-	scopeFilter []string
+	roleFilter       []string
+	scopeFilter      []string
+	eligibilityScope string
 }
 
 // NewRoleList creates a RoleList model.
@@ -46,17 +47,19 @@ func NewRoleList(
 	roleFilter []string,
 	scopeFilter []string,
 	loadFunc func() ([]azure.Role, error),
+	eligibilityScope string,
 ) RoleList {
 	return RoleList{
-		theme:        theme,
-		keys:         keys,
-		spinner:      components.NewSpinner(theme.Active),
-		active:       map[string]bool{},
-		loading:      true,
-		loadFunc:     loadFunc,
-		loadActiveFn: loadActive,
-		roleFilter:   roleFilter,
-		scopeFilter:  scopeFilter,
+		theme:            theme,
+		keys:             keys,
+		spinner:          components.NewSpinner(theme.Active),
+		active:           map[string]bool{},
+		loading:          true,
+		loadFunc:         loadFunc,
+		loadActiveFn:     loadActive,
+		roleFilter:       roleFilter,
+		scopeFilter:      scopeFilter,
+		eligibilityScope: eligibilityScope,
 	}
 }
 
@@ -218,6 +221,18 @@ func (m *RoleList) autoAdvance() tea.Cmd {
 		return func() tea.Msg { return RoleListDoneMsg{Selected: []azure.Role{r}} }
 	}
 	if len(matches) > 1 && len(m.scopeFilter) > 0 {
+		if m.eligibilityScope != "" {
+			var byEligibility []azure.Role
+			for _, r := range matches {
+				if strings.EqualFold(r.Scope, m.eligibilityScope) {
+					byEligibility = append(byEligibility, r)
+				}
+			}
+			if len(byEligibility) == 1 {
+				r := byEligibility[0]
+				return func() tea.Msg { return RoleListDoneMsg{Selected: []azure.Role{r}} }
+			}
+		}
 		var narrowed []azure.Role
 		for _, r := range matches {
 			for _, sf := range m.scopeFilter {

@@ -21,12 +21,13 @@ const (
 
 // Favorite is a saved role+scope+duration combo.
 type Favorite struct {
-	Label         string `toml:"label"`
-	Role          string `toml:"role"`
-	Scope         string `toml:"scope"`
-	Duration      string `toml:"duration"`
-	Justification string `toml:"justification"`
-	Key           int    `toml:"key"` // 1-9 for dashboard shortcuts
+	Label            string `toml:"label"`
+	Role             string `toml:"role"`
+	Scope            string `toml:"scope"`
+	Duration         string `toml:"duration"`
+	Justification    string `toml:"justification"`
+	EligibilityScope string `toml:"eligibility_scope,omitempty"`
+	Key              int    `toml:"key"`
 }
 
 // Complete reports whether all four required activation fields are set.
