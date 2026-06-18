@@ -49,6 +49,10 @@ calling user's eligibilities only.
 - `properties.scope` → stored as `Role.Scope`
 - `properties.roleDefinitionId` → stored as `Role.RoleDefinitionID` — full scope-prefixed path, pass verbatim
 
+> **Load-bearing sort:** `GetEligibleRoles` returns roles sorted by `(Scope, RoleName)`
+> (`internal/azure/roles.go`). This sort is required for `autoAdvance` determinism —
+> do not remove it. Selection logic in `rolelist.go` depends on stable order.
+
 ---
 
 ## 2. Fetch active assignments
@@ -147,6 +151,11 @@ A user with eligibility at a **management group** can activate at a narrower chi
 **Critical rule:** `linkedRoleEligibilityScheduleId` must always be the **full ARM resource
 path** as returned by the `roleEligibilitySchedules` API. Stripping it to a bare GUID causes
 HTTP 400 or HTTP 403 at the child scope.
+
+> **Canonical key:** `linkedRoleEligibilityScheduleId` (`Role.EligibilityScheduleID`) is
+> the globally-unique identifier for an eligibility. When it is known (stored in
+> `Favorite.ScheduleID` or `RecentActivation.ScheduleID`), select the role by exact ID
+> match and skip all name/scope heuristics. `pim search --output toml` always emits it.
 
 ### Why not re-query eligibility at the child scope?
 
@@ -286,3 +295,25 @@ curl -X PUT ".../subscriptions/30cfbf5f-.../providers/Microsoft.Authorization/
 | Bare GUID for `linkedRoleEligibilityScheduleId` | HTTP 400 |
 | Re-query `roleEligibilityScheduleInstances` at child scope | Returns empty — inherited MG eligibilities not visible |
 | Keep full ARM path for `linkedRoleEligibilityScheduleId` (correct) but PUT at RG scope | HTTP 403 (Azure pre-check, not a request body issue) |
+
+---
+
+## 9. Large-tenant timeout & interactive-path rule
+
+`ListAllSubscriptionsUnderMG` walks the MG tree via `eligibleChildResources?$getAllChildren=true`.
+Each node gets `mgNodeTimeoutDefault = 15 s` (`internal/azure/discovery.go`).
+On enterprise tenants with deep hierarchies, individual nodes consistently time out.
+
+**Hard rule: MG expansion is a headless/background-only operation.**
+
+| Path | Allowed? |
+|---|---|
+| `pim search` (headless) | ✓ — user expects latency; warnings go to stderr |
+| TUI render / dashboard | ✗ — stalls UI thread |
+| Favorite 1–9 shortcut | ✗ — stalls for 15s × N timed-out nodes |
+| `--headless` activation | ✓ — blocks shell, user accepts latency |
+
+The safe interactive contract: favorites carry pre-resolved `scope` + `schedule_id`.
+No MG expansion is needed at activation time when these fields are set.
+
+Override the per-node timeout with `PIM_MG_NODE_TIMEOUT` (e.g. `PIM_MG_NODE_TIMEOUT=45s`).

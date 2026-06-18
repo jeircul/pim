@@ -306,3 +306,61 @@ os.WriteFile(path, data, 0o600)
 // CORRECT — tmp file + rename (already implemented in state.Store.write):
 store.SaveState()   // use the Store methods; don't write files directly
 ```
+
+---
+
+## Search / MG expansion
+
+### ✗ Reconstructing role→subscription relationships from SearchHit fields
+
+```go
+// WRONG — reconstructing by MG ID after the fact:
+mgToMatchedSubs := map[string][]string{}
+for _, h := range hits {
+    if mg := h.ManagementGroup; mg != "" {
+        mgToMatchedSubs[mg] = append(mgToMatchedSubs[mg], h.SubscriptionID)
+    }
+}
+for _, r := range roles {
+    mgID := ManagementGroupIDFromScope(r.Scope)
+    subs, ok := mgToMatchedSubs[mgID] // breaks when physical parent ≠ eligibility MG
+    ...
+}
+```
+
+Why it breaks: `SearchHit.ManagementGroup` is the **physical direct parent MG**.
+When eligibility is granted at an ancestor MG, `ManagementGroupIDFromScope(r.Scope)`
+and `h.ManagementGroup` differ — the lookup misses and blocks are silently dropped.
+
+```go
+// CORRECT — capture at expansion time, look up directly:
+role, ok := subRoleMap[strings.ToLower(h.SubscriptionID)][strings.ToLower(roleName)]
+```
+
+See `patterns.md` (`## Capture relationships at expansion time`) and `mg-search.md`.
+
+### ✗ Calling ListAllSubscriptionsUnderMG in an interactive path
+
+```go
+// WRONG — stalls on enterprise tenants (15s/node × N timed-out nodes):
+case tea.KeyPressMsg:
+    subs, _, _, err := client.ListAllSubscriptionsUnderMG(ctx, mgID)
+    ...
+```
+
+Interactive paths (TUI render, dashboard shortcuts, favorite activation) must
+never call `ListAllSubscriptionsUnderMG`. Pre-resolved `scope` + `schedule_id`
+on the favorite config is the correct contract. See `mg-search.md`.
+
+### ✗ Depending on GetEligibleRoles API return order
+
+```go
+// WRONG — first match is non-deterministic across sessions:
+if len(matches) > 1 {
+    return matches[0] // API order varies; wrong MG may be selected
+}
+```
+
+`GetEligibleRoles` returns roles sorted by `(Scope, RoleName)` (`roles.go`).
+This sort is **load-bearing for `autoAdvance` determinism** — do not remove it.
+When adding selection logic that depends on order, assert the sort is in place.
