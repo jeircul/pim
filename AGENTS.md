@@ -113,7 +113,9 @@ Full API reference: `.agents/skills/golang/references/azure-pim-api.md`.
 - Favorites screen `ActivateMsg` always opens the wizard (incomplete favorites stop at the missing step).
 - `autoAdvance` in `rolelist.go` uses `scopeFilter` as a tiebreaker when multiple roles share the same name. When all matches are MG-scoped and the filter is a bare subscription GUID, the first match is trusted (Azure rejects wrong-scope activations with 400/403). `scopeOverride` pins the subscription as `targetScope` when exactly one MG-scoped role is selected.
 - `RecentActivation.EligibilityScope` stores the ARM eligibility path at activation time. Re-activation from the Recent screen prefers this over `Scope` so the wizard matches the original role precisely.
-- `pim search --output toml` generates paste-ready `[[favorites]]` blocks with `scope = /subscriptions/<guid>`. This is the recommended workflow for building `config.toml`.
+- `pim search --output toml` generates paste-ready `[[favorites]]` blocks with `scope`, `eligibility_scope` (MG-inherited roles only), and `schedule_id` pre-filled. Users fill in `duration`, `justification`, and `key` only. Never write `schedule_id` or `eligibility_scope` by hand.
+- `Favorite.ScheduleID` is the `EligibilityScheduleID` from the Azure PIM API — the globally-unique key used by `ActivateRole` in `linkedRoleEligibilityScheduleID`. When set, `autoAdvance` selects the matching role by exact ID, bypassing all name/scope heuristics. Falls through to `eligibility_scope` + heuristics when empty (hand-written or pre-`schedule_id` favorites).
+- `scope` and `schedule_id` are always both required even when they reference the same subscription: `scope` is the PUT URL target; `schedule_id` identifies the eligibility schedule in the request body.
 
 ## Recent behaviour
 
