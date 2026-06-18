@@ -35,7 +35,7 @@ func runSearchWithErr(ctx context.Context, a *app.App, client ClientAPI, out io.
 
 	subToMG := map[string]string{}
 
-	hits, err := buildSearchHits(ctx, client, roles, subToMG, a.Config.MGFilter, errOut)
+	hits, subRoleMap, err := buildSearchHits(ctx, client, roles, subToMG, a.Config.MGFilter, errOut)
 	if err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func runSearchWithErr(ctx context.Context, a *app.App, client ClientAPI, out io.
 	}
 
 	if a.Config.Output == app.OutputTOML {
-		return tomlFromHits(hits, roles, out)
+		return tomlFromHits(hits, subRoleMap, out)
 	}
 
 	if len(hits) == 0 {
@@ -87,7 +87,7 @@ func runSearchWithErr(ctx context.Context, a *app.App, client ClientAPI, out io.
 // expansion (including errors) are written to errOut; a failing MG is skipped
 // rather than aborting the entire search. subToMG provides physical parent MG
 // for direct-subscription-scoped roles.
-func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role, subToMG map[string]string, mgFilter string, errOut io.Writer) ([]SearchHit, error) {
+func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role, subToMG map[string]string, mgFilter string, errOut io.Writer) ([]SearchHit, map[string]map[string]azure.Role, error) {
 	type acc struct {
 		id               string
 		display          string
@@ -96,9 +96,10 @@ func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role, 
 		roles            map[string]struct{}
 	}
 	bySub := map[string]*acc{}
+	subRoleMap := map[string]map[string]azure.Role{}
 	mgCache := map[string][]azure.Subscription{}
 
-	add := func(subID, display, mg, eligibilityScope, roleName string) {
+	add := func(role azure.Role, subID, display, mg, eligibilityScope string) {
 		key := strings.ToLower(subID)
 		a, ok := bySub[key]
 		if !ok {
@@ -117,13 +118,19 @@ func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role, 
 		if a.eligibilityScope == "" {
 			a.eligibilityScope = eligibilityScope
 		}
-		a.roles[roleName] = struct{}{}
+		a.roles[role.RoleName] = struct{}{}
+		if _, ok := subRoleMap[key]; !ok {
+			subRoleMap[key] = map[string]azure.Role{}
+		}
+		if _, ok := subRoleMap[key][strings.ToLower(role.RoleName)]; !ok {
+			subRoleMap[key][strings.ToLower(role.RoleName)] = role
+		}
 	}
 
 	for _, r := range roles {
 		switch r.ScopeKind() {
 		case azure.ScopeSubscription:
-			add(azure.SubscriptionIDFromScope(r.Scope), r.ScopeDisplay, "", r.Scope, r.RoleName)
+			add(r, azure.SubscriptionIDFromScope(r.Scope), r.ScopeDisplay, "", r.Scope)
 		case azure.ScopeManagementGroup:
 			mgID := azure.ManagementGroupIDFromScope(r.Scope)
 			if mgFilter != "" {
@@ -158,7 +165,7 @@ func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role, 
 				if parent == "" {
 					parent = mgID
 				}
-				add(s.ID, s.DisplayName, parent, r.Scope, r.RoleName)
+				add(r, s.ID, s.DisplayName, parent, r.Scope)
 			}
 		}
 	}
@@ -178,7 +185,7 @@ func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role, 
 			EligibleRoles:    names,
 		})
 	}
-	return out, nil
+	return out, subRoleMap, nil
 }
 
 // favBlock is a single paste-ready favorite entry for --output toml.
@@ -191,100 +198,41 @@ type favBlock struct {
 }
 
 // tomlFromHits emits one [[favorites]] block per (subscription, role) pair.
-// hits carries the query-filtered subscription set with their eligible role names;
-// roles is the full raw eligible list used to recover per-role eligibility scope
-// and schedule ID. For each matched subscription, every role in h.EligibleRoles
-// is emitted — buildSearchHits already verified that role applies to that subscription.
-func tomlFromHits(hits []SearchHit, roles []azure.Role, out io.Writer) error {
+// subRoleMap carries the exact azure.Role that granted each role to each
+// subscription — built by buildSearchHits at expansion time. This eliminates
+// any need to reconstruct the granting Role from MG IDs.
+func tomlFromHits(hits []SearchHit, subRoleMap map[string]map[string]azure.Role, out io.Writer) error {
 	if len(hits) == 0 {
 		return nil
-	}
-
-	// subDisplay: subID → display name.
-	subDisplay := make(map[string]string, len(hits))
-	for _, h := range hits {
-		subDisplay[strings.ToLower(h.SubscriptionID)] = h.DisplayName
-	}
-
-	// subRoles: subID → set of eligible role names (from buildSearchHits expansion).
-	type subEntry struct {
-		display   string
-		subID     string
-		mgID      string // direct parent MG ID (may be empty for direct subs)
-		eligScope string // h.EligibilityScope
-		eligRoles []string
-	}
-	var entries []subEntry
-	for _, h := range hits {
-		mgID := strings.ToLower(h.ManagementGroup)
-		if mgID == "" && azure.IsManagementGroupScope(h.EligibilityScope) {
-			mgID = strings.ToLower(azure.ManagementGroupIDFromScope(h.EligibilityScope))
-		}
-		entries = append(entries, subEntry{
-			display:   h.DisplayName,
-			subID:     h.SubscriptionID,
-			mgID:      mgID,
-			eligScope: h.EligibilityScope,
-			eligRoles: h.EligibleRoles,
-		})
-	}
-
-	// rolesByName: roleName → []Role (all MG-scoped roles with that name, sorted).
-	rolesByName := make(map[string][]azure.Role)
-	for _, r := range roles {
-		rn := strings.ToLower(r.RoleName)
-		rolesByName[rn] = append(rolesByName[rn], r)
 	}
 
 	seen := map[string]struct{}{}
 	var blocks []favBlock
 
-	for _, e := range entries {
-		subScope := "/subscriptions/" + e.subID
+	for _, h := range hits {
+		subKey := strings.ToLower(h.SubscriptionID)
+		subScope := "/subscriptions/" + h.SubscriptionID
+		roleMap := subRoleMap[subKey]
 
-		for _, roleName := range e.eligRoles {
+		for _, roleName := range h.EligibleRoles {
 			blockKey := strings.ToLower(roleName) + "|" + strings.ToLower(subScope)
 			if _, ok := seen[blockKey]; ok {
 				continue
 			}
-			seen[blockKey] = struct{}{}
-
-			// Find the best Role object for this (subscription, roleName) pair.
-			// Priority: sub-direct > same-MG > any MG-scoped.
-			var best *azure.Role
-			for i := range rolesByName[strings.ToLower(roleName)] {
-				r := &rolesByName[strings.ToLower(roleName)][i]
-				switch r.ScopeKind() {
-				case azure.ScopeSubscription:
-					if strings.EqualFold(azure.SubscriptionIDFromScope(r.Scope), e.subID) {
-						best = r
-					}
-				case azure.ScopeManagementGroup:
-					mgID := strings.ToLower(azure.ManagementGroupIDFromScope(r.Scope))
-					if best == nil {
-						best = r // any MG match as fallback
-					}
-					if mgID == e.mgID {
-						best = r // prefer the MG that directly parents this subscription
-						break
-					}
-				}
-				if best != nil && best.ScopeKind() == azure.ScopeSubscription {
-					break // sub-direct is always best
-				}
-			}
-			if best == nil {
+			role, ok := roleMap[strings.ToLower(roleName)]
+			if !ok {
 				continue
 			}
+			seen[blockKey] = struct{}{}
 
 			b := favBlock{
-				displayName:      e.display,
+				displayName:      h.DisplayName,
 				role:             roleName,
 				eligibilityScope: subScope,
-				scheduleID:       best.EligibilityScheduleID,
+				scheduleID:       role.EligibilityScheduleID,
 			}
-			if best.ScopeKind() == azure.ScopeManagementGroup {
-				b.mgEligibility = best.Scope
+			if role.ScopeKind() == azure.ScopeManagementGroup {
+				b.mgEligibility = role.Scope
 			}
 			blocks = append(blocks, b)
 		}

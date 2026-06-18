@@ -817,7 +817,7 @@ func TestBuildSearchHitsMGFilterSkipsUnrelatedMG(t *testing.T) {
 		searchMGRole(scopeB, "Reader"),
 	}
 
-	hits, err := buildSearchHits(t.Context(), mock, roles, map[string]string{}, "example-mg-b", noopWriter{})
+	hits, _, err := buildSearchHits(t.Context(), mock, roles, map[string]string{}, "example-mg-b", noopWriter{})
 	if err != nil {
 		t.Fatal(err)
 	}
