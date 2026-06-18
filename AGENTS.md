@@ -16,7 +16,7 @@ Terminal-based Azure Privileged Identity Management role activation. Bubble Tea 
 internal/app/        CLI flag parsing, app composition, ctx setup
 internal/azure/      PIM REST client (client/roles/activation/discovery), errors, scopes, duration
 internal/state/      TOML config + state with mutex-guarded Store
-internal/headless/   non-TUI execution path for --headless
+  internal/headless/   non-TUI execution path (run.go) + pim search subcommand (search.go)
 internal/completion/ shell completion script generators (bash/zsh/fish)
 internal/tui/        Bubble Tea screens
   activate/          4-step wizard
@@ -95,6 +95,9 @@ irm https://raw.githubusercontent.com/jeircul/pim/main/scripts/install.ps1 | iex
 - `roleAssignmentSchedules` GET at RG scope returns 500 when the caller lacks read access. Treated as "not active".
 - `GetEligibleRoles` and `GetActiveAssignments` paginate via `nextLink`.
 - `PendingRoleAssignmentRequest` (HTTP 400) is treated as success at all scopes — the role is already activating.
+- **MG/subscription ARM paths are flat (hard constraint).** `/providers/Microsoft.Management/managementGroups/{id}` and `/subscriptions/{guid}` are structurally unrelated strings — `ScopeIsChildOf` cannot cross this boundary. A subscription is semantically a child of an MG but never a string-path child. Never infer MG→subscription parentage from scope strings alone.
+- **`$getAllChildren=true` is headless-only.** Per-node timeout is 15 s (`mgNodeTimeoutDefault` in `discovery.go`). On enterprise tenants this consistently stalls. Never call `ListAllSubscriptionsUnderMG` synchronously in an interactive path (TUI render, dashboard shortcut, favorite activation). Favorites carry pre-resolved `scope` + `schedule_id` instead.
+- **`EligibilityScheduleID` is the canonical activation key.** It is globally unique per (principal, role definition, eligibility scope) and is what `ActivateRole` sends in `linkedRoleEligibilityScheduleID`. When known, select roles by exact ID match — never by name/scope heuristics. `pim search --output toml` always emits it; users should never hand-write it.
 
 Full API reference: `.agents/skills/golang/references/azure-pim-api.md`.
 
@@ -111,11 +114,37 @@ Full API reference: `.agents/skills/golang/references/azure-pim-api.md`.
 - Dashboard 1–9 shortcut: if `Complete()` → `startWizard` with `AutoSubmit=true` and `favoritePending=true`; activation result shown as dashboard notice, TUI stays open. If not `Complete()` → error notice, no activation.
 - `favoritePending` on `AppModel` distinguishes favorite-triggered activations (return to dashboard) from manual wizard activations (quit with summary).
 - Favorites screen `ActivateMsg` always opens the wizard (incomplete favorites stop at the missing step).
-- `autoAdvance` in `rolelist.go` uses `scopeFilter` as a tiebreaker when multiple roles share the same name. When all matches are MG-scoped and the filter is a bare subscription GUID, the first match is trusted (Azure rejects wrong-scope activations with 400/403). `scopeOverride` pins the subscription as `targetScope` when exactly one MG-scoped role is selected.
+- **Role selection precedence in `autoAdvance`** (`rolelist.go`):
+  1. Exact `schedule_id` match — iterates full role list, bypasses all heuristics
+  2. Exact `eligibility_scope` match — pre-filters by MG ARM path before narrowing
+  3. Scope child-of narrowing (`ScopeIsChildOf` / `ScopeMatches`) — narrows to single match
+  4. Single-MG-candidate trust — only when exactly one MG-scoped match and a bare sub GUID filter
+  5. Fall through → manual role list (safe default for ambiguous cases)
 - `RecentActivation.EligibilityScope` stores the ARM eligibility path at activation time. Re-activation from the Recent screen prefers this over `Scope` so the wizard matches the original role precisely.
 - `pim search --output toml` generates paste-ready `[[favorites]]` blocks with `scope`, `eligibility_scope` (MG-inherited roles only), and `schedule_id` pre-filled. Users fill in `duration`, `justification`, and `key` only. Never write `schedule_id` or `eligibility_scope` by hand.
 - `Favorite.ScheduleID` is the `EligibilityScheduleID` from the Azure PIM API — the globally-unique key used by `ActivateRole` in `linkedRoleEligibilityScheduleID`. When set, `autoAdvance` selects the matching role by exact ID, bypassing all name/scope heuristics. Falls through to `eligibility_scope` + heuristics when empty (hand-written or pre-`schedule_id` favorites).
 - `scope` and `schedule_id` are always both required even when they reference the same subscription: `scope` is the PUT URL target; `schedule_id` identifies the eligibility schedule in the request body.
+
+## pim search
+
+`pim search [query] [--mg filter] [--output table|json|toml]` discovers eligible
+subscriptions across all management groups.
+
+**Pipeline:** `GetEligibleRoles` → `buildSearchHits` (MG expansion + `subRoleMap`) →
+filter → output formatter. `buildSearchHits` returns `([]SearchHit, subRoleMap, error)`;
+the `subRoleMap` carries the exact `azure.Role` that granted each role to each
+subscription, captured at expansion time. `tomlFromHits` consumes both.
+
+**`--output toml` contract:** emits one `[[favorites]]` block per (subscription, role)
+with `scope` (activation target), `eligibility_scope` (MG-inherited only), and
+`schedule_id` (`EligibilityScheduleID`) pre-filled. Users fill in `duration`,
+`justification`, and `key` only. Never write `schedule_id` or `eligibility_scope`
+by hand.
+
+**MG timeout behaviour:** inaccessible MG nodes are skipped as stderr warnings —
+not fatal. Results are partial but correct for the nodes that responded.
+
+See `.agents/skills/golang/references/mg-search.md` for the full design reference.
 
 ## Recent behaviour
 
@@ -151,6 +180,7 @@ Full API reference: `.agents/skills/golang/references/azure-pim-api.md`.
 1. Does any value in this text originate from pasted terminal output or a live session?
 2. Does it match `[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}` and is it **not** an all-zero/repeated-nibble sentinel?
 3. Is it a proper noun that is not an Azure built-in role or a well-known public Azure service name?
+4. Does this text include subscription display names, management group names, or role names from `pim search` terminal output? Those are high-risk — they originate from a live environment and must be replaced with the placeholder vocabulary above before writing.
 
 → Any "yes" → replace with the placeholder above **before** writing.
 

@@ -105,6 +105,11 @@ client.DeactivateRole(assignment ActiveAssignment, principalID string) (*Schedul
 // 1. ARM exact match: ScopeIsChildOf(expanded, role.Scope) — fastest, deterministic
 // 2. MG-trust (TUI only): subscription filter vs MG-scoped role — first match, Azure rejects wrong scope
 // Use pim search --output toml to get scope = /subscriptions/<guid> for any role.
+// pim search pipeline:
+// buildSearchHits() returns ([]SearchHit, subRoleMap, error)
+// subRoleMap[strings.ToLower(subID)][strings.ToLower(roleName)] = azure.Role
+// tomlFromHits() consumes both — direct O(1) lookup, no MG ID reconstruction.
+// See references/mg-search.md for full design contract.
 ```
 
 ## Testing
@@ -147,3 +152,4 @@ See `references/anti-patterns.md` for a full list with corrections.
 
 **TL;DR**: no Cobra/urfave, no `pkg/`, no testify, no logging libs, no `View()` returning string,
 no pointer-to-interface, no globals, no silenced errors, no inline comments.
+- Search/MG expansion anti-patterns: `references/anti-patterns.md` §Search / MG expansion

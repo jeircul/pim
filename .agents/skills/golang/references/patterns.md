@@ -306,7 +306,15 @@ func ScopeIsChildOf(child, parent string) bool {
 }
 ```
 
-`scopeOverride` in `wizard.go:290` and `autoAdvance` in `rolelist.go:202` both use this contract. When adding new scope-matching logic, call `azure.ScopeMatches` — don't inline the logic again.
+`scopeOverride` in `wizard.go` and `autoAdvance` in `rolelist.go` both use this contract.
+`autoAdvance` resolution order (highest priority first):
+1. Exact `schedule_id` match (`role.EligibilityScheduleID == fav.ScheduleID`) — iterates `m.roles` (full list)
+2. Exact `eligibility_scope` match (`role.Scope == m.eligibilityScope`) — pre-filter before heuristics
+3. Scope child-of narrowing (`ScopeIsChildOf` / `ScopeMatches`) — narrows to `len(narrowed)==1`
+4. Single-MG-candidate trust — only when exactly `len(matches)==1` and all are MG-scoped with a sub GUID filter
+5. Fall through → manual role list (safe default for ambiguous cases)
+
+When adding new scope-matching logic, call `azure.ScopeMatches` — don't inline the logic again.
 
 ---
 
@@ -401,3 +409,67 @@ if err := run(); err != nil {
 ```
 
 Avoids the common anti-pattern of `os.Exit(1)` inside library code or double-printing errors.
+
+---
+
+## Capture relationships at expansion time (subRoleMap)
+
+When flattening a 1→N expansion (e.g. MG → subscriptions), build a side-channel
+index during the walk so downstream functions receive exact objects — not
+reconstructable IDs.
+
+```go
+// In buildSearchHits — the expansion walk:
+subRoleMap := map[string]map[string]azure.Role{}
+
+add := func(role azure.Role, subID, display, mg, eligibilityScope string) {
+    key := strings.ToLower(subID)
+    // ... accumulate SearchHit fields ...
+    if _, ok := subRoleMap[key]; !ok {
+        subRoleMap[key] = map[string]azure.Role{}
+    }
+    rn := strings.ToLower(role.RoleName)
+    if _, ok := subRoleMap[key][rn]; !ok {
+        subRoleMap[key][rn] = role // first-writer-wins
+    }
+}
+// Return alongside hits:
+return hits, subRoleMap, nil
+
+// In tomlFromHits — direct O(1) lookup, no reconstruction:
+role, ok := subRoleMap[strings.ToLower(h.SubscriptionID)][strings.ToLower(roleName)]
+if !ok {
+    continue
+}
+// role.EligibilityScheduleID and role.Scope are exact — no guessing.
+```
+
+**Rule:** never reconstruct the granting `azure.Role` from `SearchHit` string
+fields (ManagementGroup, EligibilityScope) after the fact. Capture it during
+the walk. See `anti-patterns.md` for the wrong approach and `mg-search.md` for
+the full contract.
+
+The cost of getting this wrong: `tomlFromHits` was rewritten six times before
+this design was reached. Every iteration fixed one topology case and broke
+another.
+
+---
+
+## buildSearchHits → tomlFromHits data-flow contract
+
+`buildSearchHits` returns `([]SearchHit, map[string]map[string]azure.Role, error)`.
+Both return values must be passed to any TOML-producing function.
+
+Key-casing rules (both write and read sides must match):
+- Outer key: `strings.ToLower(subscriptionID)`
+- Inner key: `strings.ToLower(roleName)`
+
+`SearchHit.EligibleRoles []string` is authoritative for which roles apply to a
+subscription. `subRoleMap` provides the full `azure.Role` object for each.
+They are complementary — do not use one without the other for TOML output.
+
+`SearchHit.ManagementGroup` is the **physical direct parent MG**, not the
+eligibility MG. These differ in deep hierarchies. Never use `ManagementGroup`
+to reconstruct which `azure.Role` granted a given roleName — use `subRoleMap`.
+
+See `mg-search.md` for the full pipeline diagram.
