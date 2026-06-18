@@ -191,95 +191,102 @@ type favBlock struct {
 }
 
 // tomlFromHits emits one [[favorites]] block per (subscription, role) pair.
-// For MG-inherited roles the scope is the MG ARM path; for subscription-direct
-// roles it is the subscription ARM path. hits carries the query-filtered
-// subscription set; roles is the full raw eligible list used to recover the
-// per-role eligibility scope.
+// hits carries the query-filtered subscription set with their eligible role names;
+// roles is the full raw eligible list used to recover per-role eligibility scope
+// and schedule ID. For each matched subscription, every role in h.EligibleRoles
+// is emitted — buildSearchHits already verified that role applies to that subscription.
 func tomlFromHits(hits []SearchHit, roles []azure.Role, out io.Writer) error {
-	// Build a set of matched subscription IDs from the filtered hits.
-	matched := make(map[string]struct{}, len(hits))
-	subDisplay := make(map[string]string, len(hits))
-	for _, h := range hits {
-		key := strings.ToLower(h.SubscriptionID)
-		matched[key] = struct{}{}
-		subDisplay[key] = h.DisplayName
-	}
-	if len(matched) == 0 {
+	if len(hits) == 0 {
 		return nil
 	}
 
-	// For MG-scoped roles, map MG ID → matched subscription IDs. A hit may be
-	// reached via both a subscription-direct role and an MG-inherited role; the
-	// merge in buildSearchHits keeps only the first EligibilityScope, so neither
-	// field alone is sufficient. Key on both the physical parent
-	// (h.ManagementGroup) and the eligibility MG ID extracted from EligibilityScope;
-	// the role loop looks up by ManagementGroupIDFromScope(r.Scope) — bare MG IDs.
-	mgToMatchedSubs := make(map[string][]string)
+	// subDisplay: subID → display name.
+	subDisplay := make(map[string]string, len(hits))
 	for _, h := range hits {
-		if mg := strings.ToLower(h.ManagementGroup); mg != "" {
-			mgToMatchedSubs[mg] = append(mgToMatchedSubs[mg], h.SubscriptionID)
+		subDisplay[strings.ToLower(h.SubscriptionID)] = h.DisplayName
+	}
+
+	// subRoles: subID → set of eligible role names (from buildSearchHits expansion).
+	type subEntry struct {
+		display   string
+		subID     string
+		mgID      string // direct parent MG ID (may be empty for direct subs)
+		eligScope string // h.EligibilityScope
+		eligRoles []string
+	}
+	var entries []subEntry
+	for _, h := range hits {
+		mgID := strings.ToLower(h.ManagementGroup)
+		if mgID == "" && azure.IsManagementGroupScope(h.EligibilityScope) {
+			mgID = strings.ToLower(azure.ManagementGroupIDFromScope(h.EligibilityScope))
 		}
-		if azure.IsManagementGroupScope(h.EligibilityScope) {
-			if es := strings.ToLower(azure.ManagementGroupIDFromScope(h.EligibilityScope)); es != "" {
-				mgToMatchedSubs[es] = append(mgToMatchedSubs[es], h.SubscriptionID)
-			}
-		}
+		entries = append(entries, subEntry{
+			display:   h.DisplayName,
+			subID:     h.SubscriptionID,
+			mgID:      mgID,
+			eligScope: h.EligibilityScope,
+			eligRoles: h.EligibleRoles,
+		})
+	}
+
+	// rolesByName: roleName → []Role (all MG-scoped roles with that name, sorted).
+	rolesByName := make(map[string][]azure.Role)
+	for _, r := range roles {
+		rn := strings.ToLower(r.RoleName)
+		rolesByName[rn] = append(rolesByName[rn], r)
 	}
 
 	seen := map[string]struct{}{}
 	var blocks []favBlock
 
-	for _, r := range roles {
-		switch r.ScopeKind() {
-		case azure.ScopeSubscription:
-			subID := strings.ToLower(azure.SubscriptionIDFromScope(r.Scope))
-			if _, ok := matched[subID]; !ok {
-				continue
-			}
-			key := strings.ToLower(r.RoleName) + "|" + strings.ToLower(r.Scope)
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			display := subDisplay[subID]
-			if display == "" {
-				display = r.ScopeDisplay
-			}
-			blocks = append(blocks, favBlock{
-				displayName:      display,
-				role:             r.RoleName,
-				eligibilityScope: r.Scope,
-				scheduleID:       r.EligibilityScheduleID,
-			})
+	for _, e := range entries {
+		subScope := "/subscriptions/" + e.subID
 
-		case azure.ScopeManagementGroup:
-			mgID := strings.ToLower(azure.ManagementGroupIDFromScope(r.Scope))
-			subs, ok := mgToMatchedSubs[mgID]
-			if !ok {
+		for _, roleName := range e.eligRoles {
+			blockKey := strings.ToLower(roleName) + "|" + strings.ToLower(subScope)
+			if _, ok := seen[blockKey]; ok {
 				continue
 			}
-			// Emit one block per matched subscription under this MG.
-			// scope = /subscriptions/<guid> so the activation targets that
-			// specific subscription, not the entire MG.
-			for _, subID := range subs {
-				subScope := "/subscriptions/" + subID
-				key := strings.ToLower(r.RoleName) + "|" + strings.ToLower(subScope)
-				if _, ok := seen[key]; ok {
-					continue
+			seen[blockKey] = struct{}{}
+
+			// Find the best Role object for this (subscription, roleName) pair.
+			// Priority: sub-direct > same-MG > any MG-scoped.
+			var best *azure.Role
+			for i := range rolesByName[strings.ToLower(roleName)] {
+				r := &rolesByName[strings.ToLower(roleName)][i]
+				switch r.ScopeKind() {
+				case azure.ScopeSubscription:
+					if strings.EqualFold(azure.SubscriptionIDFromScope(r.Scope), e.subID) {
+						best = r
+					}
+				case azure.ScopeManagementGroup:
+					mgID := strings.ToLower(azure.ManagementGroupIDFromScope(r.Scope))
+					if best == nil {
+						best = r // any MG match as fallback
+					}
+					if mgID == e.mgID {
+						best = r // prefer the MG that directly parents this subscription
+						break
+					}
 				}
-				seen[key] = struct{}{}
-				display := subDisplay[strings.ToLower(subID)]
-				if display == "" {
-					display = r.ScopeDisplay
+				if best != nil && best.ScopeKind() == azure.ScopeSubscription {
+					break // sub-direct is always best
 				}
-				blocks = append(blocks, favBlock{
-					displayName:      display,
-					role:             r.RoleName,
-					eligibilityScope: subScope,
-					mgEligibility:    r.Scope,
-					scheduleID:       r.EligibilityScheduleID,
-				})
 			}
+			if best == nil {
+				continue
+			}
+
+			b := favBlock{
+				displayName:      e.display,
+				role:             roleName,
+				eligibilityScope: subScope,
+				scheduleID:       best.EligibilityScheduleID,
+			}
+			if best.ScopeKind() == azure.ScopeManagementGroup {
+				b.mgEligibility = best.Scope
+			}
+			blocks = append(blocks, b)
 		}
 	}
 
