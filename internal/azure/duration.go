@@ -85,5 +85,5 @@ func ParseDurationMinutes(s string) (int, error) {
 		}
 	}
 
-	return 0, fmt.Errorf("unrecognised duration %q; use 1h, 30m, 1h30m, or 1.5h", s)
+	return 0, fmt.Errorf("unrecognised duration %q; expected a duration like 30m, 1h, or 1h30m", s)
 }
