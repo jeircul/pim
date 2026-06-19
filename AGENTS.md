@@ -16,7 +16,7 @@ Terminal-based Azure Privileged Identity Management role activation. Bubble Tea 
 internal/app/        CLI flag parsing, app composition, ctx setup
 internal/azure/      PIM REST client (client/roles/activation/discovery), errors, scopes, duration
 internal/state/      TOML config + state with mutex-guarded Store
-  internal/headless/   non-TUI execution path (run.go) + pim search subcommand (search.go)
+internal/headless/   non-TUI execution path (run.go) + pim search subcommand (search.go)
 internal/completion/ shell completion script generators (bash/zsh/fish)
 internal/tui/        Bubble Tea screens
   activate/          4-step wizard
