@@ -227,6 +227,24 @@ func filterRoles(ctx context.Context, client ClientAPI, roles []azure.Role, role
 				armMatches[i] = struct{}{}
 			}
 		}
+		// When the user supplies a full MG ARM path whose ID is a display name
+		// (e.g. /providers/.../managementGroups/Omnia-Classic-DEV) but the actual
+		// ARM ID in GetEligibleRoles is a GUID, the path match above fails. Fall
+		// back to exact display-name match against the MG ID segment.
+		if len(armMatches) == 0 {
+			mgID := azure.ManagementGroupIDFromScope(expanded)
+			if mgID != "" {
+				for _, i := range roleIdx {
+					if !azure.IsManagementGroupScope(roles[i].Scope) {
+						continue
+					}
+					if strings.EqualFold(mgID, azure.ManagementGroupIDFromScope(roles[i].Scope)) ||
+						strings.EqualFold(mgID, scopeDisplays[i]) {
+						armMatches[i] = struct{}{}
+					}
+				}
+			}
+		}
 		if len(armMatches) > 0 {
 			for i := range armMatches {
 				add(roleTarget{role: roles[i], scope: expanded})
