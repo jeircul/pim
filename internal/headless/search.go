@@ -82,8 +82,12 @@ func runSearchWithErr(ctx context.Context, a *app.App, client ClientAPI, out io.
 }
 
 // mgExpansionWorkers bounds concurrent ListAllSubscriptionsUnderMG calls
-// across distinct MGs, matching the per-node concurrency bound in
-// discovery.go's BFS walk.
+// across distinct MGs. This only bounds how many top-level expansions run
+// at once; actual ARM request concurrency (across both this fan-out and
+// discovery.go's per-node BFS inside each expansion) is capped at
+// azure.mgConcurrencyLimit by a semaphore shared on the *azure.Client, so
+// nested fan-out here cannot multiply request concurrency beyond that
+// shared ceiling.
 const mgExpansionWorkers = 8
 
 // mgExpansionResult is the outcome of expanding one distinct management

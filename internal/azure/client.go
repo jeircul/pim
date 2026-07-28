@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -27,6 +28,25 @@ const (
 type Client struct {
 	cred       azcore.TokenCredential
 	httpClient *http.Client
+	mgSemOnce  sync.Once
+	mgSem      chan struct{}
+}
+
+// mgConcurrencyLimit caps the total number of concurrent ARM
+// management-group requests a single Client issues, across both the
+// per-node BFS in ListAllSubscriptionsUnderMG and any concurrent expansion
+// of distinct MGs by callers (e.g. pim search). The semaphore is shared
+// across all such calls so nested fan-out cannot multiply concurrency
+// beyond this ceiling.
+const mgConcurrencyLimit = 8
+
+// managementGroupSemaphore returns the Client's shared management-group
+// request semaphore, initializing it on first use.
+func (c *Client) managementGroupSemaphore() chan struct{} {
+	c.mgSemOnce.Do(func() {
+		c.mgSem = make(chan struct{}, mgConcurrencyLimit)
+	})
+	return c.mgSem
 }
 
 type childResource struct {
