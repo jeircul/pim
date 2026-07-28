@@ -5,7 +5,7 @@ Terminal-based Azure Privileged Identity Management role activation. Bubble Tea 
 ## Stack
 
 - Go 1.26
-- TUI: Bubble Tea v2, Lip Gloss v2, Bubbles v2, Huh v2
+- TUI: Bubble Tea v2, Lip Gloss v2, Bubbles v2
 - Azure: `azidentity` + `azcore` + raw REST (no ARM SDK for PIM)
 - Persistence: TOML via BurntSushi/toml (`~/.config/pim/`)
 - Build: Task (`task fmt / test / build / install`), GoReleaser

@@ -13,6 +13,8 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/jeircul/pim/internal/app"
 	"github.com/jeircul/pim/internal/azure"
 	"github.com/jeircul/pim/internal/state"
@@ -276,16 +278,32 @@ func (m *AppModel) startStatus() tea.Cmd {
 	client := m.a.Client
 	ctx := m.ctx
 	m.statusModel = status.New(m.theme, m.keys, func() ([]azure.ActiveAssignment, []azure.Role, error) {
-		callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
-		defer callCancel()
-		active, err := client.GetActiveAssignments(callCtx)
-		if err != nil {
-			return nil, nil, err
-		}
-		callCtx2, callCancel2 := context.WithTimeout(ctx, 30*time.Second)
-		defer callCancel2()
-		eligible, err := client.GetEligibleRoles(callCtx2)
-		if err != nil {
+		var (
+			active   []azure.ActiveAssignment
+			eligible []azure.Role
+		)
+		g, gCtx := errgroup.WithContext(ctx)
+		g.Go(func() error {
+			callCtx, callCancel := context.WithTimeout(gCtx, 30*time.Second)
+			defer callCancel()
+			a, err := client.GetActiveAssignments(callCtx)
+			if err != nil {
+				return err
+			}
+			active = a
+			return nil
+		})
+		g.Go(func() error {
+			callCtx, callCancel := context.WithTimeout(gCtx, 30*time.Second)
+			defer callCancel()
+			e, err := client.GetEligibleRoles(callCtx)
+			if err != nil {
+				return err
+			}
+			eligible = e
+			return nil
+		})
+		if err := g.Wait(); err != nil {
 			return nil, nil, err
 		}
 		return active, eligible, nil

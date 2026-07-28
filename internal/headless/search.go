@@ -6,6 +6,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"sync"
 	"text/tabwriter"
 
 	"github.com/jeircul/pim/internal/app"
@@ -80,9 +81,26 @@ func runSearchWithErr(ctx context.Context, a *app.App, client ClientAPI, out io.
 	return tw.Flush()
 }
 
+// mgExpansionWorkers bounds concurrent ListAllSubscriptionsUnderMG calls
+// across distinct MGs, matching the per-node concurrency bound in
+// discovery.go's BFS walk.
+const mgExpansionWorkers = 8
+
+// mgExpansionResult is the outcome of expanding one distinct management
+// group, produced by the concurrent phase of buildSearchHits and consumed
+// by the serial merge phase.
+type mgExpansionResult struct {
+	mgID     string
+	subs     []azure.Subscription
+	parents  map[string]string
+	warnings []string
+	err      error
+}
+
 // buildSearchHits walks all eligible roles and flattens them into a deduplicated
 // list of activatable subscriptions. MG-scoped roles are expanded via
-// ListAllSubscriptionsUnderMG (cached per MG). RG-scoped roles are excluded.
+// ListAllSubscriptionsUnderMG (cached per MG); distinct MGs are expanded
+// concurrently, bounded to mgExpansionWorkers. RG-scoped roles are excluded.
 // Roles for the same subscription are merged into one hit. Warnings from MG
 // expansion (including errors) are written to errOut; a failing MG is skipped
 // rather than aborting the entire search. subToMG provides physical parent MG
@@ -97,7 +115,6 @@ func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role, 
 	}
 	bySub := map[string]*acc{}
 	subRoleMap := map[string]map[string]azure.Role{}
-	mgCache := map[string][]azure.Subscription{}
 
 	add := func(role azure.Role, subID, display, mg, eligibilityScope string) {
 		key := strings.ToLower(subID)
@@ -127,37 +144,81 @@ func buildSearchHits(ctx context.Context, client ClientAPI, roles []azure.Role, 
 		}
 	}
 
+	// First pass: collect distinct MG IDs that pass mgFilter and need expansion.
+	var mgToExpand []string
+	seenMG := map[string]struct{}{}
+	for _, r := range roles {
+		if r.ScopeKind() != azure.ScopeManagementGroup {
+			continue
+		}
+		mgID := azure.ManagementGroupIDFromScope(r.Scope)
+		if _, ok := seenMG[mgID]; ok {
+			continue
+		}
+		seenMG[mgID] = struct{}{}
+		if mgFilter != "" {
+			f := strings.ToLower(mgFilter)
+			idL := strings.ToLower(mgID)
+			if !strings.Contains(idL, f) && !strings.Contains(f, idL) {
+				continue
+			}
+		}
+		mgToExpand = append(mgToExpand, mgID)
+	}
+
+	// Concurrent phase: expand each distinct MG, bounded by mgExpansionWorkers.
+	results := make(map[string]mgExpansionResult, len(mgToExpand))
+	var (
+		mu  sync.Mutex
+		wg  sync.WaitGroup
+		sem = make(chan struct{}, mgExpansionWorkers)
+	)
+	for _, mgID := range mgToExpand {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			list, parents, warnings, err := client.ListAllSubscriptionsUnderMG(ctx, mgID)
+			mu.Lock()
+			defer mu.Unlock()
+			results[mgID] = mgExpansionResult{mgID: mgID, subs: list, parents: parents, warnings: warnings, err: err}
+		}()
+	}
+	wg.Wait()
+
+	// Serial merge phase: apply expansion results and role-scoped logic in
+	// deterministic role order.
+	mgCache := map[string][]azure.Subscription{}
 	for _, r := range roles {
 		switch r.ScopeKind() {
 		case azure.ScopeSubscription:
 			add(r, azure.SubscriptionIDFromScope(r.Scope), r.ScopeDisplay, "", r.Scope)
 		case azure.ScopeManagementGroup:
 			mgID := azure.ManagementGroupIDFromScope(r.Scope)
-			if mgFilter != "" {
-				f := strings.ToLower(mgFilter)
-				idL := strings.ToLower(mgID)
-				if !strings.Contains(idL, f) && !strings.Contains(f, idL) {
-					mgCache[mgID] = nil
-					continue
-				}
-			}
 			subs, ok := mgCache[mgID]
 			if !ok {
-				list, parents, warnings, err := client.ListAllSubscriptionsUnderMG(ctx, mgID)
-				for _, w := range warnings {
-					fmt.Fprintf(errOut, "warning: %s\n", w)
-				}
-				if err != nil {
-					fmt.Fprintf(errOut, "warning: list subscriptions under management group %s: %s\n", mgID, err)
+				res, expanded := results[mgID]
+				if !expanded {
+					// mgFilter excluded this MG from expansion.
 					mgCache[mgID] = nil
 					continue
 				}
-				for k, v := range parents {
+				for _, w := range res.warnings {
+					fmt.Fprintf(errOut, "warning: %s\n", w)
+				}
+				if res.err != nil {
+					fmt.Fprintf(errOut, "warning: list subscriptions under management group %s: %s\n", mgID, res.err)
+					mgCache[mgID] = nil
+					continue
+				}
+				for k, v := range res.parents {
 					if _, exists := subToMG[k]; !exists {
 						subToMG[k] = v
 					}
 				}
-				subs = list
+				subs = res.subs
 				mgCache[mgID] = subs
 			}
 			for _, s := range subs {
