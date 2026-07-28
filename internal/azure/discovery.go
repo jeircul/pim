@@ -69,10 +69,13 @@ func mgNodeTimeout() time.Duration {
 // ListAllSubscriptionsUnderMG returns all subscriptions reachable under a
 // management group by recursively expanding child management groups.
 // The ARM token is acquired once and reused for all requests.
-// Sibling nodes are expanded concurrently (bounded to 8 workers) so a stalled
-// node does not delay its siblings. Inaccessible intermediate nodes are
-// skipped; their paths are returned as warnings so callers can surface them
-// without aborting.
+// Sibling nodes are expanded concurrently, drawing from the Client's shared
+// management-group semaphore (mgConcurrencyLimit) so a stalled node does not
+// delay its siblings, and so concurrent calls to ListAllSubscriptionsUnderMG
+// from multiple goroutines (e.g. pim search expanding several MGs at once)
+// never push total in-flight ARM requests past the shared ceiling.
+// Inaccessible intermediate nodes are skipped; their paths are returned as
+// warnings so callers can surface them without aborting.
 // parents maps lowercased subscription ID to the MG that directly contained it
 // during the BFS walk.
 func (c *Client) ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) (subs []Subscription, parents map[string]string, warnings []string, err error) {
@@ -81,8 +84,7 @@ func (c *Client) ListAllSubscriptionsUnderMG(ctx context.Context, mgID string) (
 		return nil, nil, nil, fmt.Errorf("acquire ARM token: %w", err)
 	}
 
-	const workers = 8
-	sem := make(chan struct{}, workers)
+	sem := c.managementGroupSemaphore()
 	nodeTO := mgNodeTimeout()
 
 	parents = map[string]string{}
