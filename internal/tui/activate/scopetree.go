@@ -6,7 +6,6 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/jeircul/pim/internal/azure"
 	"github.com/jeircul/pim/internal/tui/components"
 	"github.com/jeircul/pim/internal/tui/styles"
@@ -494,8 +493,7 @@ func (m ScopeTree) View() string {
 		line := cursor + indent + prefix + check + n.display
 		sb.WriteString(line + "\n")
 		if n.loadErr != nil {
-			errStyle := lipgloss.NewStyle().Foreground(m.theme.Danger)
-			sb.WriteString(indent + "  " + errStyle.Render("  "+n.loadErr.Error()) + "\n")
+			sb.WriteString(indent + "  " + m.theme.DangerText.Render("  "+n.loadErr.Error()) + "\n")
 		}
 	}
 
