@@ -54,8 +54,10 @@ func classifyChildResources(resources []childResource) ([]ManagementGroup, []Sub
 }
 
 // mgNodeTimeoutDefault bounds each management-group node lookup so one stalled
-// node does not delay its siblings. Override with PIM_MG_NODE_TIMEOUT (e.g. "45s").
-const mgNodeTimeoutDefault = 15 * time.Second
+// node does not delay its siblings. Override with PIM_MG_NODE_TIMEOUT (e.g. "15s"
+// for faster failure on small tenants). Nodes run concurrently under a shared
+// semaphore, so this budget does not multiply linearly across the tree.
+const mgNodeTimeoutDefault = 45 * time.Second
 
 func mgNodeTimeout() time.Duration {
 	if v := os.Getenv("PIM_MG_NODE_TIMEOUT"); v != "" {
