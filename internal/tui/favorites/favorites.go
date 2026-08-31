@@ -32,6 +32,7 @@ const (
 	fieldRole
 	fieldScope
 	fieldDuration
+	fieldJustification
 	fieldKey
 	fieldCount // sentinel
 )
@@ -179,6 +180,10 @@ func (m Model) updateDelete(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) deleteChar(f state.Favorite, fld editField) state.Favorite {
+	if fld == fieldKey {
+		f.Key = 0
+		return f
+	}
 	ptr := m.fieldPtr(&f, fld)
 	if len(*ptr) > 0 {
 		*ptr = (*ptr)[:len(*ptr)-1]
@@ -206,6 +211,8 @@ func (m Model) fieldPtr(f *state.Favorite, fld editField) *string {
 		return &f.Scope
 	case fieldDuration:
 		return &f.Duration
+	case fieldJustification:
+		return &f.Justification
 	default:
 		return &f.Label
 	}
@@ -256,11 +263,12 @@ func (m Model) View() string {
 			val  string
 			fld  editField
 		}{
-			{"Label   ", m.edit.Label, fieldLabel},
-			{"Role    ", m.edit.Role, fieldRole},
-			{"Scope   ", m.edit.Scope, fieldScope},
-			{"Duration", m.edit.Duration, fieldDuration},
-			{"Key (1-9)", fmt.Sprintf("%d", m.edit.Key), fieldKey},
+			{"Label        ", m.edit.Label, fieldLabel},
+			{"Role         ", m.edit.Role, fieldRole},
+			{"Scope        ", m.edit.Scope, fieldScope},
+			{"Duration     ", m.edit.Duration, fieldDuration},
+			{"Justification", m.edit.Justification, fieldJustification},
+			{"Key (1-9)    ", fmt.Sprintf("%d", m.edit.Key), fieldKey},
 		}
 		for _, f := range fields {
 			label := m.theme.Subtle.Render(f.name + ": ")
