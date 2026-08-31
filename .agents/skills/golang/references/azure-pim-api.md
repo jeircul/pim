@@ -252,7 +252,7 @@ eligibilities is impossible without a pre-existing assignment.
 | Request | Response | Meaning |
 |---|---|---|
 | PUT `{rgScope}/…/roleAssignmentScheduleRequests/{uuid}` | **HTTP 403 AuthorizationFailed** | Azure scope pre-check fails |
-| GET `{rgScope}/…/roleAssignmentSchedules` | **HTTP 500** | No read access; `isRoleActiveAt` swallows this as "not active" — expected |
+| GET `{rgScope}/…/roleAssignmentSchedules` | **HTTP 400/500** | No read access; `isRoleActiveAt` swallows both as "not active" — expected |
 | PUT any scope | **HTTP 400 PendingRoleAssignmentRequest** | An activation request is already pending; treat as success-equivalent |
 
 ### Fallback pattern (implemented in `ActivateRole`)

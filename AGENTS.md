@@ -91,8 +91,8 @@ irm https://raw.githubusercontent.com/jeircul/pim/main/scripts/install.ps1 | iex
 
 - `linkedRoleEligibilityScheduleId` must be the full ARM resource path, not a bare GUID.
 - Inherited MG-level eligibilities are invisible when re-queried at child scopes.
-- RG-scope activation returns 403 (chicken-and-egg). The client falls back to subscription scope automatically.
-- `roleAssignmentSchedules` GET at RG scope returns 500 when the caller lacks read access. Treated as "not active".
+- RG-scope activation returns 403 (chicken-and-egg). The client falls back to subscription scope automatically. The fallback **widens** the granted scope, so `ScheduleResponse.EffectiveScope` carries the scope Azure actually accepted. Callers must report and record that, never the requested scope.
+- `roleAssignmentSchedules` GET at RG scope returns 400 or 500 when the caller lacks read access. Both are treated as "not active".
 - `GetEligibleRoles` and `GetActiveAssignments` paginate via `nextLink`.
 - `PendingRoleAssignmentRequest` (HTTP 400) is treated as success at all scopes — the role is already activating.
 - **MG/subscription ARM paths are flat (hard constraint).** `/providers/Microsoft.Management/managementGroups/{id}` and `/subscriptions/{guid}` are structurally unrelated strings — `ScopeIsChildOf` cannot cross this boundary. A subscription is semantically a child of an MG but never a string-path child. Never infer MG→subscription parentage from scope strings alone.
@@ -110,7 +110,7 @@ Full API reference: `.agents/skills/golang/references/azure-pim-api.md`.
 
 ## Favorites behaviour
 
-- `Favorite.Complete()` returns true when `role`, `scope`, `duration`, and `justification` are all non-empty.
+- `Favorite.Complete()` returns true when `role`, `scope`, `duration`, and `justification` are all non-empty. All four are editable in the favorites screen; any field missing from the editor makes every TUI-created favorite permanently incomplete.
 - Dashboard 1–9 shortcut: if `Complete()` → `startWizard` with `AutoSubmit=true` and `favoritePending=true`; activation result shown as dashboard notice, TUI stays open. If not `Complete()` → error notice, no activation.
 - `favoritePending` on `AppModel` distinguishes favorite-triggered activations (return to dashboard) from manual wizard activations (quit with summary).
 - Favorites screen `ActivateMsg` always opens the wizard (incomplete favorites stop at the missing step).
@@ -143,6 +143,10 @@ by hand.
 
 **MG timeout behaviour:** inaccessible MG nodes are skipped as stderr warnings —
 not fatal. Results are partial but correct for the nodes that responded.
+
+**`--mg` is search-only.** `Parse` rejects it on every other subcommand rather
+than accepting and ignoring it. `search` also gets a 10 minute context budget
+(other commands get 2) because MG expansion runs at up to 45s per node.
 
 See `.agents/skills/golang/references/mg-search.md` for the full design reference.
 
