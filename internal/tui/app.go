@@ -370,11 +370,17 @@ func (m *AppModel) startWizard(fav *state.Favorite, autoSubmit bool) tea.Cmd {
 			defer callCancel()
 			return client.ListEligibleResourceGroups(callCtx, subID)
 		},
-		Activate: func(role azure.Role, pid, justification string, minutes int, targetScope string) error {
+		Activate: func(role azure.Role, pid, justification string, minutes int, targetScope string) (string, error) {
 			callCtx, callCancel := context.WithTimeout(ctx, 60*time.Second)
 			defer callCancel()
-			_, err := client.ActivateRole(callCtx, role, pid, justification, minutes, targetScope)
-			return err
+			resp, err := client.ActivateRole(callCtx, role, pid, justification, minutes, targetScope)
+			if err != nil {
+				return "", err
+			}
+			if resp == nil {
+				return "", nil
+			}
+			return resp.EffectiveScope, nil
 		},
 	}
 

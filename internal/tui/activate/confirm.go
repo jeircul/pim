@@ -29,8 +29,11 @@ type ConfirmDoneMsg struct {
 type activationItem struct {
 	role        azure.Role
 	targetScope string // may differ from role.Scope for MG-scoped
-	status      itemStatus
-	err         error
+	// effectiveScope is the scope Azure accepted, which differs from
+	// targetScope when an RG-scope request falls back to subscription scope.
+	effectiveScope string
+	status         itemStatus
+	err            error
 }
 
 type itemStatus int
@@ -43,8 +46,9 @@ const (
 )
 
 type activationResultMsg struct {
-	idx int
-	err error
+	idx            int
+	effectiveScope string
+	err            error
 }
 
 // Confirm is Step 4: shows a summary and executes activations.
@@ -59,7 +63,7 @@ type Confirm struct {
 	submitted     bool
 	width         int
 	height        int
-	activateFunc  func(role azure.Role, principalID, justification string, minutes int, targetScope string) error
+	activateFunc  func(role azure.Role, principalID, justification string, minutes int, targetScope string) (string, error)
 }
 
 // NewConfirm creates a Confirm model.
@@ -70,7 +74,7 @@ func NewConfirm(
 	minutes int,
 	justification string,
 	principalID string,
-	activateFunc func(azure.Role, string, string, int, string) error,
+	activateFunc func(azure.Role, string, string, int, string) (string, error),
 ) Confirm {
 	return Confirm{
 		theme:         theme,
@@ -96,6 +100,7 @@ func (m Confirm) Update(msg tea.Msg) (Confirm, tea.Cmd) {
 
 	case activationResultMsg:
 		m.items[msg.idx].err = msg.err
+		m.items[msg.idx].effectiveScope = msg.effectiveScope
 		if msg.err != nil {
 			m.items[msg.idx].status = statusFailed
 		} else {
@@ -143,8 +148,8 @@ func (m Confirm) runActivation(i int) tea.Cmd {
 	minutes := m.minutes
 	fn := m.activateFunc
 	return func() tea.Msg {
-		err := fn(item.role, principalID, justification, minutes, item.targetScope)
-		return activationResultMsg{idx: i, err: err}
+		effective, err := fn(item.role, principalID, justification, minutes, item.targetScope)
+		return activationResultMsg{idx: i, effectiveScope: effective, err: err}
 	}
 }
 
@@ -163,6 +168,9 @@ func (m *Confirm) collectResults() []Result {
 		scope := it.targetScope
 		if scope == "" {
 			scope = it.role.Scope
+		}
+		if it.effectiveScope != "" {
+			scope = it.effectiveScope
 		}
 		results = append(results, Result{
 			RoleName:         it.role.RoleName,

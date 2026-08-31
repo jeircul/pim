@@ -151,17 +151,25 @@ func runActivate(ctx context.Context, a *app.App, client ClientAPI, user *azure.
 	var lastErr error
 	for _, match := range targets {
 		scope := azure.NormalizeScope(match.scope)
-		_, err := client.ActivateRole(ctx, match.role, user.ID, cfg.Justification, minutes, scope)
+		resp, err := client.ActivateRole(ctx, match.role, user.ID, cfg.Justification, minutes, scope)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "activate %s@%s: %v\n", match.role.RoleName, scope, err)
 			lastErr = err
 			continue
 		}
-		fmt.Fprintf(out, "Activated: %s @ %s for %s\n", match.role.RoleName, scope, timeStr)
+		effective := scope
+		if resp != nil && resp.EffectiveScope != "" {
+			effective = resp.EffectiveScope
+		}
+		if effective != scope {
+			fmt.Fprintf(os.Stderr, "note: %s could not be activated at %s; Azure granted it at %s instead\n",
+				match.role.RoleName, scope, effective)
+		}
+		fmt.Fprintf(out, "Activated: %s @ %s for %s\n", match.role.RoleName, effective, timeStr)
 		a.Store.AddRecentActivation(state.RecentActivation{
 			Role:             match.role.RoleName,
-			Scope:            scope,
-			ScopeDisplay:     azure.DefaultScopeDisplay(scope, ""),
+			Scope:            effective,
+			ScopeDisplay:     azure.DefaultScopeDisplay(effective, ""),
 			EligibilityScope: match.role.Scope,
 			ScheduleID:       match.role.EligibilityScheduleID,
 			Duration:         timeStr,
