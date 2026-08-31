@@ -321,7 +321,10 @@ func filterAssignments(assignments []azure.ActiveAssignment, roleFilters, scopeF
 			scopeMatch := false
 			for _, sf := range scopeFilters {
 				expanded, _ := azure.ExpandScopeFilter(sf)
-				if azure.ScopeIsChildOf(a.Scope, expanded) || azure.ScopeIsChildOf(expanded, a.Scope) {
+				// Match assignments at or under the filter only. The reverse
+				// direction would let --scope <rg> match a subscription-wide
+				// assignment and deactivate far more access than was asked for.
+				if azure.ScopeIsChildOf(a.Scope, expanded) {
 					scopeMatch = true
 					break
 				}
