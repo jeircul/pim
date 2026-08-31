@@ -39,10 +39,16 @@ func (a *App) Connect(_ context.Context) error {
 	return nil
 }
 
-// DefaultContext returns a context that cancels on SIGINT/SIGTERM or after 2 minutes.
-func DefaultContext() (context.Context, context.CancelFunc) {
+// DefaultContext returns a context that cancels on SIGINT/SIGTERM or after a
+// command-appropriate deadline. Search fans out across the whole management
+// group tree at up to 45s per node, so it cannot share the single-request budget.
+func DefaultContext(command string) (context.Context, context.CancelFunc) {
+	timeout := 2 * time.Minute
+	if command == CmdSearch {
+		timeout = 10 * time.Minute
+	}
 	sigCtx, sigCancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	timeCtx, timeCancel := context.WithTimeout(sigCtx, 2*time.Minute)
+	timeCtx, timeCancel := context.WithTimeout(sigCtx, timeout)
 	return timeCtx, func() {
 		timeCancel()
 		sigCancel()
