@@ -30,6 +30,29 @@ irm https://raw.githubusercontent.com/jeircul/pim/main/scripts/install.ps1 | iex
 
 `~/.local/bin` (Unix) or `%LOCALAPPDATA%\Programs\pim` (Windows) must be on `PATH`.
 
+Both scripts verify the downloaded archive against `pim_checksums.txt` before
+installing it, and refuse to install on a mismatch.
+
+### 🔏 Verify a release yourself
+
+Releases are signed with [cosign](https://github.com/sigstore/cosign) keyless
+signing, and ship an SPDX SBOM for every archive. The checksum file is the
+signed artifact, and it covers every other file in the release.
+
+```sh
+# Download the checksum file, its signature and its certificate
+gh release download vX.Y.Z --pattern 'pim_checksums.txt*'
+
+cosign verify-blob pim_checksums.txt \
+  --signature pim_checksums.txt.sig \
+  --certificate pim_checksums.txt.pem \
+  --certificate-identity-regexp 'https://github.com/jeircul/pim/.github/workflows/release.yml@.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+# Then check any archive against the now-trusted checksum file
+sha256sum -c pim_checksums.txt --ignore-missing
+```
+
 ## 🚀 Quick start
 
 ```sh
