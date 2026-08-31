@@ -266,18 +266,18 @@ func (m *RoleList) autoAdvance() tea.Cmd {
 			}
 		}
 		if guid != "" {
-			allMG := true
+			mgCount := 0
+			var mgMatch azure.Role
 			for _, r := range matches {
-				if !azure.IsManagementGroupScope(r.Scope) {
-					allMG = false
-					break
+				if azure.IsManagementGroupScope(r.Scope) {
+					mgCount++
+					mgMatch = r
 				}
 			}
-			if allMG && len(matches) == 1 {
-				// Exactly one MG-scoped candidate — trust the configured scope.
+			if mgCount == 1 {
+				// Exactly one MG-scoped candidate: trust the configured scope.
 				// Azure rejects a wrong-MG activation with 400/403.
-				r := matches[0]
-				return func() tea.Msg { return RoleListDoneMsg{Selected: []azure.Role{r}} }
+				return func() tea.Msg { return RoleListDoneMsg{Selected: []azure.Role{mgMatch}} }
 			}
 			// Multiple MG-scoped candidates: cannot determine which MG owns
 			// the configured subscription without an API call. Fall through to
