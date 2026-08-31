@@ -1,7 +1,6 @@
 package azure
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -70,7 +69,7 @@ func (c *Client) ActivateRole(ctx context.Context, role Role, principalID, justi
 	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/roleAssignmentScheduleRequests/%s?api-version=%s",
 		armEndpoint, scopePath, requestID, apiVersion)
 
-	resp, err := c.doRequest(ctx, http.MethodPut, reqURL, tok, bytes.NewReader(body))
+	resp, err := c.doRequest(ctx, http.MethodPut, reqURL, tok, body)
 	if err != nil {
 		var apiErr *APIError
 		if errors.As(err, &apiErr) && apiErr.StatusCode == 400 &&
@@ -112,7 +111,7 @@ func (c *Client) activateAtSubscriptionScope(ctx context.Context, req ScheduleRe
 	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/roleAssignmentScheduleRequests/%s?api-version=%s",
 		armEndpoint, subScope, requestID, apiVersion)
 
-	resp, err := c.doRequest(ctx, http.MethodPut, reqURL, tok, bytes.NewReader(body))
+	resp, err := c.doRequest(ctx, http.MethodPut, reqURL, tok, body)
 	if err != nil {
 		var apiErr *APIError
 		if errors.As(err, &apiErr) && apiErr.StatusCode == 400 &&
@@ -149,7 +148,7 @@ func (c *Client) DeactivateRole(ctx context.Context, assignment ActiveAssignment
 	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/roleAssignmentScheduleRequests/%s?api-version=%s",
 		armEndpoint, assignment.Scope, requestID, apiVersion)
 
-	resp, err := c.doRequest(ctx, http.MethodPut, reqURL, tok, bytes.NewReader(body))
+	resp, err := c.doRequest(ctx, http.MethodPut, reqURL, tok, body)
 	if err != nil {
 		return nil, fmt.Errorf("submit deactivation: %w", err)
 	}

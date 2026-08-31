@@ -1,6 +1,7 @@
 package azure
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -115,11 +116,16 @@ func (c *Client) graphToken(ctx context.Context) (string, error) {
 }
 
 // doRequest executes an HTTP request and returns the response.
-// body must be nil or re-readable for retries; all current callers pass nil.
-func (c *Client) doRequest(ctx context.Context, method, reqURL, token string, body io.Reader) (*http.Response, error) {
+// body is wrapped in a fresh reader on every attempt: a single io.Reader would
+// be drained by the first send, so 429 retries would resend an empty payload.
+func (c *Client) doRequest(ctx context.Context, method, reqURL, token string, body []byte) (*http.Response, error) {
 	const maxRetries = 4
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		req, err := http.NewRequestWithContext(ctx, method, reqURL, body)
+		var payload io.Reader
+		if body != nil {
+			payload = bytes.NewReader(body)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, reqURL, payload)
 		if err != nil {
 			return nil, fmt.Errorf("create request: %w", err)
 		}
