@@ -166,7 +166,9 @@ func (c *Client) isRoleActiveAt(ctx context.Context, scope, roleDefinitionID, pr
 	resp, err := c.doRequest(ctx, http.MethodGet, reqURL, tok, nil)
 	if err != nil {
 		var apiErr *APIError
-		if errors.As(err, &apiErr) && apiErr.StatusCode == 500 {
+		// Azure returns 400 or 500 here when the caller lacks read access at
+		// the scope. Neither answers the question, so treat both as inactive.
+		if errors.As(err, &apiErr) && (apiErr.StatusCode == 400 || apiErr.StatusCode == 500) {
 			return false, nil
 		}
 		return false, fmt.Errorf("check active status: %w", err)
