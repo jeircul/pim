@@ -182,4 +182,9 @@ type ScheduleResponse struct {
 	Properties struct {
 		Status string `json:"status"`
 	} `json:"properties"`
+	// EffectiveScope is the ARM scope the request was accepted at. It differs
+	// from the requested scope when an RG-scope activation falls back to
+	// subscription scope, so callers must report and record this, not the
+	// scope they asked for.
+	EffectiveScope string `json:"-"`
 }

@@ -1,7 +1,6 @@
 package azure
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -70,12 +69,12 @@ func (c *Client) ActivateRole(ctx context.Context, role Role, principalID, justi
 	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/roleAssignmentScheduleRequests/%s?api-version=%s",
 		armEndpoint, scopePath, requestID, apiVersion)
 
-	resp, err := c.doRequest(ctx, http.MethodPut, reqURL, tok, bytes.NewReader(body))
+	resp, err := c.doRequest(ctx, http.MethodPut, reqURL, tok, body)
 	if err != nil {
 		var apiErr *APIError
 		if errors.As(err, &apiErr) && apiErr.StatusCode == 400 &&
 			(strings.EqualFold(apiErr.Code, errCodePendingRequest) || strings.EqualFold(apiErr.Code, errCodeAssignmentExists)) {
-			return &ScheduleResponse{}, nil
+			return &ScheduleResponse{EffectiveScope: scopePath}, nil
 		}
 		if IsResourceGroupScope(scopePath) && errors.As(err, &apiErr) &&
 			(apiErr.StatusCode == 403 || strings.EqualFold(apiErr.Code, "AuthorizationFailed")) {
@@ -85,7 +84,12 @@ func (c *Client) ActivateRole(ctx context.Context, role Role, principalID, justi
 	}
 	defer resp.Body.Close()
 
-	return decodeScheduleResponse(resp.Body, "decode response")
+	sched, err := decodeScheduleResponse(resp.Body, "decode response")
+	if err != nil {
+		return nil, err
+	}
+	sched.EffectiveScope = scopePath
+	return sched, nil
 }
 
 // activateAtSubscriptionScope retries an activation request at subscription scope
@@ -112,18 +116,23 @@ func (c *Client) activateAtSubscriptionScope(ctx context.Context, req ScheduleRe
 	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/roleAssignmentScheduleRequests/%s?api-version=%s",
 		armEndpoint, subScope, requestID, apiVersion)
 
-	resp, err := c.doRequest(ctx, http.MethodPut, reqURL, tok, bytes.NewReader(body))
+	resp, err := c.doRequest(ctx, http.MethodPut, reqURL, tok, body)
 	if err != nil {
 		var apiErr *APIError
 		if errors.As(err, &apiErr) && apiErr.StatusCode == 400 &&
 			(strings.EqualFold(apiErr.Code, errCodePendingRequest) || strings.EqualFold(apiErr.Code, errCodeAssignmentExists)) {
-			return &ScheduleResponse{}, nil
+			return &ScheduleResponse{EffectiveScope: subScope}, nil
 		}
 		return nil, fmt.Errorf("submit activation at %s (and fallback to subscription %s): %w", rgScope, subScope, errors.Join(rgErr, err))
 	}
 	defer resp.Body.Close()
 
-	return decodeScheduleResponse(resp.Body, "decode fallback response")
+	sched, err := decodeScheduleResponse(resp.Body, "decode fallback response")
+	if err != nil {
+		return nil, err
+	}
+	sched.EffectiveScope = subScope
+	return sched, nil
 }
 
 // DeactivateRole submits a role deactivation request.
@@ -149,13 +158,18 @@ func (c *Client) DeactivateRole(ctx context.Context, assignment ActiveAssignment
 	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/roleAssignmentScheduleRequests/%s?api-version=%s",
 		armEndpoint, assignment.Scope, requestID, apiVersion)
 
-	resp, err := c.doRequest(ctx, http.MethodPut, reqURL, tok, bytes.NewReader(body))
+	resp, err := c.doRequest(ctx, http.MethodPut, reqURL, tok, body)
 	if err != nil {
 		return nil, fmt.Errorf("submit deactivation: %w", err)
 	}
 	defer resp.Body.Close()
 
-	return decodeScheduleResponse(resp.Body, "decode response")
+	sched, err := decodeScheduleResponse(resp.Body, "decode response")
+	if err != nil {
+		return nil, err
+	}
+	sched.EffectiveScope = assignment.Scope
+	return sched, nil
 }
 
 func decodeScheduleResponse(r io.Reader, context string) (*ScheduleResponse, error) {

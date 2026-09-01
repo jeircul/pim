@@ -149,6 +149,10 @@ func Parse(args []string) (Config, error) {
 		return cfg, fmt.Errorf("search: --role, --scope, --time, --justification, --yes are not valid for this command")
 	}
 
+	if cfg.Command != CmdSearch && cfg.MGFilter != "" {
+		return cfg, fmt.Errorf("--mg is only valid for the search command")
+	}
+
 	return cfg, nil
 }
 

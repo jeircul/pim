@@ -22,6 +22,7 @@ type mockClient struct {
 	eligible      []azure.Role
 	eligibleErr   error
 	activateErr   error
+	activateScope string
 	deactivateErr error
 	mgSubs        map[string][]azure.Subscription
 	mgSubsErr     error
@@ -46,7 +47,11 @@ func (m *mockClient) ActivateRole(_ context.Context, role azure.Role, principalI
 	if m.activateErr != nil {
 		return nil, m.activateErr
 	}
-	return &azure.ScheduleResponse{}, nil
+	scope := m.activateScope
+	if scope == "" {
+		scope = targetScope
+	}
+	return &azure.ScheduleResponse{EffectiveScope: scope}, nil
 }
 
 func (m *mockClient) DeactivateRole(_ context.Context, assignment azure.ActiveAssignment, principalID string) (*azure.ScheduleResponse, error) {
@@ -643,5 +648,55 @@ func TestFilterRolesMGFanoutSecondScopeDisplayFallback(t *testing.T) {
 	}
 	if len(targets) != 2 {
 		t.Fatalf("want 2 targets, got %d: %+v", len(targets), targets)
+	}
+}
+
+// Azure rejects RG-scope activation and the client silently retries at
+// subscription scope. The broader scope must be what gets reported and stored,
+// otherwise the user is told they hold less privilege than they actually do.
+func TestRunActivateReportsEffectiveScopeAfterFallback(t *testing.T) {
+	user := &azure.User{ID: "uid-1"}
+	rgScope := "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/my-rg"
+	subScope := "/subscriptions/00000000-0000-0000-0000-000000000000"
+
+	cfg := app.Config{
+		Command:       app.CmdActivate,
+		Roles:         []string{"Contributor"},
+		Scopes:        []string{rgScope},
+		TimeStr:       "1h",
+		Justification: "need access",
+	}
+	client := &mockClient{
+		user: user,
+		eligible: []azure.Role{{
+			RoleName:              "Contributor",
+			Scope:                 rgScope,
+			RoleDefinitionID:      "rd-1",
+			EligibilityScheduleID: "/sched/1",
+		}},
+		activateScope: subScope,
+	}
+
+	a := newTestApp(t, cfg)
+	out, err := captureOutput(t, func(w io.Writer) error {
+		return runActivate(context.Background(), a, client, user, w)
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Substring checks are useless here: the RG path contains the subscription
+	// path as a prefix. Assert the whole rendered line instead.
+	wantLine := "Activated: Contributor @ " + subScope + " for 1h"
+	if !strings.Contains(out, wantLine) {
+		t.Errorf("stdout %q does not contain %q", out, wantLine)
+	}
+
+	recents := a.Store.RecentActivations()
+	if len(recents) != 1 {
+		t.Fatalf("got %d recent activations, want 1", len(recents))
+	}
+	if recents[0].Scope != subScope {
+		t.Errorf("recorded scope = %q, want effective scope %q", recents[0].Scope, subScope)
 	}
 }

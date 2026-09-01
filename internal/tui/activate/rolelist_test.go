@@ -88,6 +88,17 @@ func TestAutoAdvance(t *testing.T) {
 			wantNil:     true,
 		},
 		{
+			name: "exactly one MG-scoped match among several candidates with bare sub GUID trusts the MG candidate",
+			roles: []azure.Role{
+				{RoleName: "Contributor", Scope: "/providers/Microsoft.Management/managementGroups/my-mgmt-group"},
+				{RoleName: "Contributor", Scope: "/subscriptions/11111111-1111-1111-1111-111111111111"},
+			},
+			roleFilter:  []string{"Contributor"},
+			scopeFilter: []string{"00000000-0000-0000-0000-000000000000"},
+			wantNil:     false,
+			wantRole:    azure.Role{RoleName: "Contributor", Scope: "/providers/Microsoft.Management/managementGroups/my-mgmt-group"},
+		},
+		{
 			name: "one MG-scoped match with bare sub GUID emits the role",
 			roles: []azure.Role{
 				{RoleName: "Contributor", Scope: "/providers/Microsoft.Management/managementGroups/mg-a"},

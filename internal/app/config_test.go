@@ -185,3 +185,20 @@ func TestSearchRejectsActivationFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestMGFlagRejectedOutsideSearch(t *testing.T) {
+	rejected := [][]string{
+		{"activate", "--mg", "my-mgmt-group", "--role", "Reader", "--scope", "my-sub", "-t", "1h", "-j", "test"},
+		{"deactivate", "--mg", "my-mgmt-group"},
+		{"status", "--mg", "my-mgmt-group"},
+	}
+	for _, args := range rejected {
+		if _, err := Parse(args); err == nil {
+			t.Errorf("Parse(%v) expected error, got nil", args)
+		}
+	}
+
+	if _, err := Parse([]string{"search", "--mg", "my-mgmt-group"}); err != nil {
+		t.Errorf("Parse(search --mg) unexpected error: %v", err)
+	}
+}

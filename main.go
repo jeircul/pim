@@ -67,7 +67,7 @@ func run() error {
 		return err
 	}
 
-	ctx, cancel := app.DefaultContext()
+	ctx, cancel := app.DefaultContext(cfg.Command)
 	defer cancel()
 
 	if cfg.IsHeadless() || cfg.Command == app.CmdSearch {

@@ -239,3 +239,52 @@ func roleNames(a []azure.ActiveAssignment) []string {
 	}
 	return out
 }
+
+// Deactivate must never widen the blast radius of --scope. A resource-group
+// filter matching a subscription-wide assignment would give up the whole
+// subscription when the user asked to release one resource group.
+func TestFilterAssignmentsDoesNotMatchBroaderScope(t *testing.T) {
+	sub := "/subscriptions/00000000-0000-0000-0000-000000000000"
+	rg := sub + "/resourceGroups/my-rg"
+
+	subWide := azure.ActiveAssignment{RoleName: "Owner", Scope: sub, ScopeDisplay: "my-subscription"}
+	rgScoped := azure.ActiveAssignment{RoleName: "Owner", Scope: rg, ScopeDisplay: "my-rg"}
+
+	tests := []struct {
+		name        string
+		assignments []azure.ActiveAssignment
+		scopeFilter string
+		wantLen     int
+	}{
+		{
+			name:        "rg filter does not match a subscription-wide assignment",
+			assignments: []azure.ActiveAssignment{subWide},
+			scopeFilter: rg,
+			wantLen:     0,
+		},
+		{
+			name:        "subscription filter matches an rg-scoped assignment",
+			assignments: []azure.ActiveAssignment{rgScoped},
+			scopeFilter: sub,
+			wantLen:     1,
+		},
+		{
+			name:        "exact scope still matches",
+			assignments: []azure.ActiveAssignment{subWide},
+			scopeFilter: sub,
+			wantLen:     1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := filterAssignments(tc.assignments, nil, []string{tc.scopeFilter})
+			if err != nil {
+				t.Fatalf("filterAssignments: %v", err)
+			}
+			if len(got) != tc.wantLen {
+				t.Errorf("got %d assignments, want %d", len(got), tc.wantLen)
+			}
+		})
+	}
+}

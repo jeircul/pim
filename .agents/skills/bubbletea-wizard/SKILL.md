@@ -443,9 +443,10 @@ without user interaction.
 3. **Scope child-of narrowing** — `ScopeMatches` / `ScopeIsChildOf` against
    `scopeFilter`. If exactly 1 match survives narrowing, emits it.
 
-4. **Single-MG-candidate trust** — if all name-matches are MG-scoped, scope filter
-   is a bare subscription GUID, and exactly 1 name-match exists: trust it. `scopeOverride`
-   in `wizard.go` then pins the subscription as `targetScope`.
+4. **Single-MG-candidate trust** — if the scope filter is a bare subscription GUID
+   and exactly 1 of the name-matches is MG-scoped: trust it. `scopeOverride`
+   in `wizard.go` then pins the subscription as `targetScope`. Count the MG-scoped
+   matches; do not test the total match count, which is already >1 at this point.
 
 5. **Fall through → `return nil`** — the safe default. The role list renders for
    manual selection. This is correct for ambiguous cases (2+ same-named MG roles,
