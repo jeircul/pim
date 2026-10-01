@@ -168,6 +168,9 @@ func (c *Client) listManagementGroupChildrenWithToken(ctx context.Context, mgID,
 }
 
 func (c *Client) fetchEligibleChildResourcesWithToken(ctx context.Context, scope, token string) ([]childResource, error) {
+	if err := validateScope(scope); err != nil {
+		return nil, err
+	}
 	reqURL := fmt.Sprintf("%s%s/providers/Microsoft.Authorization/eligibleChildResources?api-version=%s&$getAllChildren=true",
 		armEndpoint, scope, eligibleChildResourcesAPIVersion)
 

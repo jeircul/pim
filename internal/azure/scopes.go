@@ -1,6 +1,7 @@
 package azure
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -16,9 +17,32 @@ func IsSubscriptionScope(scope string) bool {
 	return strings.HasPrefix(lower, "/subscriptions/") && !strings.Contains(lower, "/resourcegroups/")
 }
 
-// IsResourceGroupScope reports whether the scope is a resource group.
+// IsResourceGroupScope reports whether the scope is a resource group or a
+// resource below one, i.e. it starts with /subscriptions/<id>/resourceGroups/<name>.
 func IsResourceGroupScope(scope string) bool {
-	return strings.Contains(strings.ToLower(scope), "/resourcegroups/")
+	segs := strings.Split(strings.TrimPrefix(scope, "/"), "/")
+	return strings.HasPrefix(scope, "/") && len(segs) >= 4 &&
+		strings.EqualFold(segs[0], "subscriptions") && segs[1] != "" &&
+		strings.EqualFold(segs[2], "resourceGroups") && segs[3] != ""
+}
+
+// validateScope rejects scopes that could change the host, query or path
+// of the ARM URL they are appended to.
+func validateScope(scope string) error {
+	if !strings.HasPrefix(scope, "/") {
+		return fmt.Errorf("invalid scope %q: must start with /", scope)
+	}
+	for _, bad := range []string{"@", "://", "?", "#", `\`} {
+		if strings.Contains(scope, bad) {
+			return fmt.Errorf("invalid scope %q: contains %q", scope, bad)
+		}
+	}
+	for seg := range strings.SplitSeq(scope, "/") {
+		if seg == ".." {
+			return fmt.Errorf("invalid scope %q: contains .. segment", scope)
+		}
+	}
+	return nil
 }
 
 // ManagementGroupIDFromScope extracts the management group ID from a scope path.
