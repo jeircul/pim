@@ -35,7 +35,29 @@ func newTestClient(t *testing.T, h http.Handler) *Client {
 		return d.DialContext(ctx, network, addr)
 	}
 	tr.TLSClientConfig.ServerName = "example.com"
-	return &Client{cred: staticCredential{}, httpClient: &http.Client{Transport: tr}}
+	return &Client{cred: staticCredential{}, httpClient: newHTTPClient(tr)}
+}
+
+func TestRedirectToForeignHostIsRefused(t *testing.T) {
+	for _, target := range []string{
+		"https://sub.management.azure.com/steal",
+		"https://evil.example/steal",
+	} {
+		t.Run(target, func(t *testing.T) {
+			var hits atomic.Int32
+			c := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				hits.Add(1)
+				http.Redirect(w, r, target, http.StatusFound)
+			}))
+			_, err := c.doRequest(t.Context(), http.MethodGet, armEndpoint+"/start", "token", nil)
+			if err == nil || !strings.Contains(err.Error(), "refuse request") {
+				t.Fatalf("doRequest err = %v; want refused redirect", err)
+			}
+			if n := hits.Load(); n != 1 {
+				t.Fatalf("server saw %d requests; want 1", n)
+			}
+		})
+	}
 }
 
 func TestDoRequestResendsBodyOnRetry(t *testing.T) {

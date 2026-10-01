@@ -96,8 +96,23 @@ func NewClient() (*Client, error) {
 
 	return &Client{
 		cred:       cred,
-		httpClient: &http.Client{Timeout: httpTimeout},
+		httpClient: newHTTPClient(nil),
 	}, nil
+}
+
+// newHTTPClient checks every redirect hop against the host allowlist, because
+// net/http keeps the Authorization header on a redirect to a subdomain.
+func newHTTPClient(rt http.RoundTripper) *http.Client {
+	return &http.Client{
+		Transport: rt,
+		Timeout:   httpTimeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("stopped after %d redirects", len(via))
+			}
+			return checkRequestURL(req.URL.String())
+		},
+	}
 }
 
 func (c *Client) getToken(ctx context.Context, scope string) (string, error) {
