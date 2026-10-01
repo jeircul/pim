@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -20,8 +21,10 @@ import (
 const (
 	apiVersion                       = "2020-10-01"
 	eligibleChildResourcesAPIVersion = "2020-10-01"
-	armEndpoint                      = "https://management.azure.com"
-	graphEndpoint                    = "https://graph.microsoft.com/v1.0"
+	armHost                          = "management.azure.com"
+	graphHost                        = "graph.microsoft.com"
+	armEndpoint                      = "https://" + armHost
+	graphEndpoint                    = "https://" + graphHost + "/v1.0"
 	httpTimeout                      = 90 * time.Second
 )
 
@@ -119,6 +122,9 @@ func (c *Client) graphToken(ctx context.Context) (string, error) {
 // body is wrapped in a fresh reader on every attempt: a single io.Reader would
 // be drained by the first send, so 429 retries would resend an empty payload.
 func (c *Client) doRequest(ctx context.Context, method, reqURL, token string, body []byte) (*http.Response, error) {
+	if err := checkRequestURL(reqURL); err != nil {
+		return nil, err
+	}
 	const maxRetries = 4
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		var payload io.Reader
@@ -156,6 +162,25 @@ func (c *Client) doRequest(ctx context.Context, method, reqURL, token string, bo
 		return resp, nil
 	}
 	return nil, fmt.Errorf("request to %s exceeded retry limit after 429 responses", reqURL)
+}
+
+// checkRequestURL refuses any URL that would carry the bearer token to a host
+// other than ARM or Graph, such as a crafted scope or a hostile nextLink.
+func checkRequestURL(reqURL string) error {
+	u, err := url.Parse(reqURL)
+	if err != nil {
+		return fmt.Errorf("parse request url: %w", err)
+	}
+	if u.Scheme != "https" {
+		return fmt.Errorf("refuse request to host %q: scheme %q is not https", u.Host, u.Scheme)
+	}
+	if u.User != nil {
+		return fmt.Errorf("refuse request to host %q: url contains userinfo", u.Host)
+	}
+	if u.Host != armHost && u.Host != graphHost {
+		return fmt.Errorf("refuse request to host %q: not an allowed Azure endpoint", u.Host)
+	}
+	return nil
 }
 
 // retryAfter returns the duration to wait before retrying a 429 response.

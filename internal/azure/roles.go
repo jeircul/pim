@@ -155,6 +155,9 @@ func (c *Client) IsRoleActive(ctx context.Context, role Role, principalID string
 }
 
 func (c *Client) isRoleActiveAt(ctx context.Context, scope, roleDefinitionID, principalID string) (bool, error) {
+	if err := validateScope(scope); err != nil {
+		return false, err
+	}
 	tok, err := c.armToken(ctx)
 	if err != nil {
 		return false, err

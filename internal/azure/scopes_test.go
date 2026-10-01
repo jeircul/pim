@@ -104,3 +104,59 @@ func TestScopeMatchesBareMGName(t *testing.T) {
 		t.Error("ScopeMatches: bare MG name should not match different MG scope")
 	}
 }
+
+func TestValidateScope(t *testing.T) {
+	tests := []struct {
+		name  string
+		scope string
+		ok    bool
+	}{
+		{"subscription", "/subscriptions/00000000-0000-0000-0000-000000000000", true},
+		{"resource group", "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/my-rg", true},
+		{"management group", "/providers/Microsoft.Management/managementGroups/my-mgmt-group", true},
+		{"empty", "", false},
+		{"no leading slash", "subscriptions/x", false},
+		{"userinfo", "@evil.example/resourceGroups/x", false},
+		{"at sign mid path", "/subscriptions/x@evil.example", false},
+		{"scheme", "/x/https://evil.example", false},
+		{"query", "/subscriptions/x?api-version=1", false},
+		{"fragment", "/subscriptions/x#frag", false},
+		{"backslash", `/subscriptions/x\evil`, false},
+		{"dotdot segment", "/subscriptions/x/../../evil", false},
+		{"dotdot inside name", "/subscriptions/x/resourceGroups/a..b", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateScope(tt.scope)
+			if (err == nil) != tt.ok {
+				t.Errorf("validateScope(%q) = %v; want ok=%v", tt.scope, err, tt.ok)
+			}
+		})
+	}
+}
+
+func TestIsResourceGroupScope(t *testing.T) {
+	tests := []struct {
+		name  string
+		scope string
+		want  bool
+	}{
+		{"resource group", "/subscriptions/x/resourceGroups/my-rg", true},
+		{"lowercase keywords", "/subscriptions/x/resourcegroups/my-rg", true},
+		{"resource below rg", "/subscriptions/x/resourceGroups/my-rg/providers/Microsoft.Web/sites/a", true},
+		{"subscription", "/subscriptions/x", false},
+		{"userinfo trick", "@evil.example/resourceGroups/x", false},
+		{"no leading slash", "subscriptions/x/resourceGroups/my-rg", false},
+		{"rg not at prefix", "/providers/foo/subscriptions/x/resourceGroups/my-rg", false},
+		{"empty sub id", "/subscriptions//resourceGroups/my-rg", false},
+		{"empty rg name", "/subscriptions/x/resourceGroups/", false},
+		{"management group", "/providers/Microsoft.Management/managementGroups/my-mgmt-group", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsResourceGroupScope(tt.scope); got != tt.want {
+				t.Errorf("IsResourceGroupScope(%q) = %v; want %v", tt.scope, got, tt.want)
+			}
+		})
+	}
+}

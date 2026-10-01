@@ -33,6 +33,9 @@ func (c *Client) ActivateRole(ctx context.Context, role Role, principalID, justi
 	if strings.TrimSpace(targetScope) != "" {
 		scopePath = NormalizeScope(targetScope)
 	}
+	if err := validateScope(scopePath); err != nil {
+		return nil, err
+	}
 
 	active, err := c.isRoleActiveAt(ctx, scopePath, role.RoleDefinitionID, principalID)
 	if err != nil {
@@ -137,6 +140,9 @@ func (c *Client) activateAtSubscriptionScope(ctx context.Context, req ScheduleRe
 
 // DeactivateRole submits a role deactivation request.
 func (c *Client) DeactivateRole(ctx context.Context, assignment ActiveAssignment, principalID string) (*ScheduleResponse, error) {
+	if err := validateScope(assignment.Scope); err != nil {
+		return nil, err
+	}
 	tok, err := c.armToken(ctx)
 	if err != nil {
 		return nil, err
