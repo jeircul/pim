@@ -2,7 +2,6 @@ version: 2
 project_name: pim
 before:
   hooks:
-    - go mod tidy
     - sh -c "mkdir -p completions && go run . completion bash > completions/pim.bash && go run . completion zsh > completions/pim.zsh && go run . completion fish > completions/pim.fish"
 builds:
   - id: pim
